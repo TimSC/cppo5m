@@ -1,5 +1,5 @@
 
 all:
-	g++ o5m.cpp -o o5m
+	g++ o5m.cpp varint.cpp -o o5m
 
 

@@ -1,63 +1,6 @@
 
 #include <assert.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdexcept>
-#include <sstream>
-
-// ****** Varint and zigzag encodings ******
-
-uint64_t DecodeVarint(std::istream &str)
-{
-	unsigned contin = 1;
-	size_t offset = 0;
-	uint64_t total = 0;
-	while (contin) {
-		char rawBuff = str.get();
-		if(str.fail())
-			throw std::runtime_error("Read result has unexpected length");
-
-		uint64_t val = *(unsigned char *)(&rawBuff);
-		contin = (val & 0x80) != 0;
-		total += (val & 0x7f) << offset;
-		offset += 7;
-	}
-
-	return total;
-}
-
-uint64_t DecodeVarint(const char *str)
-{
-	std::stringstream test(str);
-	std::istringstream ss(test.str());
-	return DecodeVarint(ss);
-}
-
-int64_t DecodeZigzag(std::istream &str)
-{
-	unsigned char contin = 1;
-	uint64_t offset = 0;
-	uint64_t total = 0;
-	while (contin) {
-		char rawBuff = str.get();
-		if(str.fail())
-			throw std::runtime_error("Read result has unexpected length");
-
-		uint64_t val = *(unsigned char *)(&rawBuff);
-		contin = (val & 0x80) != 0;
-		total += (val & 0x7f) << offset;
-		offset += 7;
-	}
-
-	return (total >> 1) ^ (-(total & 1));
-}
-
-int64_t DecodeZigzag(const char *str)
-{
-	std::stringstream test(str);
-	std::istringstream ss(test.str());
-	return DecodeZigzag(ss);
-}
+#include "varint.h"
 
 // ****** o5m utilities ******
 
@@ -73,18 +16,20 @@ void TestDecodeNumber()
 	assert (DecodeZigzag("\x05") == -3);
 	assert (DecodeZigzag("\x81\x01") == -65);
 }
-/*
-def TestEncodeNumber():
-	assert (Encoding.EncodeVarint(5) == b'\x05')
-	assert (Encoding.EncodeVarint(127) == b'\x7f')
-	assert (Encoding.EncodeVarint(323) == b'\xc3\x02')
-	assert (Encoding.EncodeVarint(16384) == b'\x80\x80\x01')
-	assert (Encoding.EncodeZigzag(4) == b'\x08')
-	assert (Encoding.EncodeZigzag(64) == b'\x80\x01')
-	assert (Encoding.EncodeZigzag(-2) == b'\x03')
-	assert (Encoding.EncodeZigzag(-3) == b'\x05')
-	assert (Encoding.EncodeZigzag(-65) == b'\x81\x01')
 
+void TestEncodeNumber()
+{
+	assert (EncodeVarint(5) == "\x05");
+	assert (EncodeVarint(127) == "\x7f");
+	assert (EncodeVarint(323) == "\xc3\x02");
+	assert (EncodeVarint(16384) == "\x80\x80\x01");
+	assert (EncodeZigzag(4) == "\x08");
+	assert (EncodeZigzag(64) == "\x80\x01");
+	assert (EncodeZigzag(-2) == "\x03");
+	assert (EncodeZigzag(-3) == "\x05");
+	assert (EncodeZigzag(-65) == "\x81\x01");
+}
+/*
 # ****** o5m decoder ******
 
 class O5mDecode(object):
@@ -592,6 +537,6 @@ class O5mEncode(object):
 int main()
 {
 	TestDecodeNumber();
-	//TestEncodeNumber();
+	TestEncodeNumber();
 }
 
