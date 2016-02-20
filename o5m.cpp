@@ -176,15 +176,15 @@ void O5mDecode::DecodeBoundingBox()
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
 {
 	char tmp[] = "a";
-	out.clear();
+	out = "";
 	char code = 0x01;
-	while(code != 0x00)
+	while(code != 0x00 && !stream.eof())
 	{
 		code = stream.get();
 		if (code != 0x00)
 		{
 			tmp[0] = code;
-			out.append(tmp);
+			out.append(tmp, 1);
 		}
 	}
 }
@@ -194,12 +194,12 @@ void O5mDecode::ConsiderAddToStringRefTable(const std::string &firstStr, const s
 	//Consider adding pair to string reference table
 	if(firstStr.size() + secondStr.size() <= this->refTableLengthThreshold)
 	{
-		std::stringstream combinedRaw;
-		combinedRaw << firstStr;
-		combinedRaw << "\x00";
-		combinedRaw << secondStr;
-		combinedRaw << "\x00";
-		this->AddBuffToStringRefTable(combinedRaw.str());
+		this->combinedRawTmpBuff = "";
+		this->combinedRawTmpBuff.append(firstStr);
+		this->combinedRawTmpBuff.append("\x00", 1);
+		this->combinedRawTmpBuff.append(secondStr);
+		this->combinedRawTmpBuff.append("\x00", 1);
+		this->AddBuffToStringRefTable(this->combinedRawTmpBuff);
 	}
 }
 
@@ -212,9 +212,21 @@ void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
 		this->stringPairs.pop_front();
 }
 
-void O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
+bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
 {
-	uint64_t ref = DecodeVarint(stream);
+	uint64_t ref = 0;
+	try {
+		ref = DecodeVarint(stream);
+	}
+	catch (std::runtime_error &err)
+	{
+		if(stream.eof()) {
+			firstStr = "";
+			secondStr = "";
+			return false;
+		}
+		throw err;	
+	}
 	if(ref == 0x00)
 	{
 		//print "new pair"
@@ -224,13 +236,15 @@ void O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	}
 	else
 	{
-		//print "ref", ref
-
-		std::string &prevPair = this->stringPairs[this->stringPairs.size()-ref];
+		int64_t offset = this->stringPairs.size()-ref;
+		if(offset < 0 || offset >= this->stringPairs.size())
+			throw std::runtime_error("o5m reference out of range");
+		std::string &prevPair = this->stringPairs[offset];
 		std::istringstream ss(prevPair);
 		this->DecodeSingleString(ss, firstStr);
 		this->DecodeSingleString(ss, secondStr);
 	}
+	return true;
 }
 
 void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out)
@@ -284,8 +298,8 @@ void O5mDecode::DecodeNode()
 	TagMap tags;
 	while(!nodeDataStream.eof())
 	{
-		this->ReadStringPair(nodeDataStream, firstString, secondString);
-		tags[firstString] = secondString;
+		bool ok = this->ReadStringPair(nodeDataStream, firstString, secondString);
+		if(ok) tags[firstString] = secondString;
 	}
 
 	if(this->funcStoreNode != NULL)

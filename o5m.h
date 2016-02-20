@@ -47,13 +47,14 @@ protected:
 
 	std::string tmpBuff;
 	class MetaData tmpMetaData;
+	std::string combinedRawTmpBuff;
 
 	void DecodeBoundingBox();
 	void DecodeSingleString(std::istream &stream, std::string &out);
 	void ConsiderAddToStringRefTable(const std::string &firstStr, const std::string &secondStr);
 	void AddBuffToStringRefTable(const std::string &buff);
 	void DecodeMetaData(std::istream &nodeDataStream, class MetaData &out);
-	void ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr);
+	bool ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr);
 	void DecodeNode();
 
 public:
