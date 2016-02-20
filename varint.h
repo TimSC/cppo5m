@@ -1,3 +1,6 @@
+#ifndef _VARINT_H
+#define _VARINT_H
+
 #include <stdint.h>
 #include <sstream>
 #include <string>
@@ -10,4 +13,6 @@ void EncodeVarint(uint64_t val, std::string &out);
 std::string EncodeVarint(uint64_t val);
 void EncodeZigzag(int64_t val, std::string &out);
 std::string EncodeZigzag(int64_t val);
+
+#endif //_VARINT_H
 

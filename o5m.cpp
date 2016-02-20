@@ -1,6 +1,9 @@
 
 #include <assert.h>
+#include <stdexcept>
+#include <iostream>
 #include "varint.h"
+#include "o5m.h"
 
 // ****** o5m utilities ******
 
@@ -29,72 +32,102 @@ void TestEncodeNumber()
 	assert (EncodeZigzag(-3) == "\x05");
 	assert (EncodeZigzag(-65) == "\x81\x01");
 }
-/*
-# ****** o5m decoder ******
 
-class O5mDecode(object):
-	def __init__(self, handle):
-		self.handle = handle
-		if struct.unpack("B", self.handle.read(1))[0] != 0xFF:
-			raise RuntimeError("First byte has wrong value")
-		if struct.unpack("B", self.handle.read(1))[0] != 0xE0:
-			raise RuntimeError("Missing header")
-		
-		self.ResetDeltaCoding()
-		self.funcStoreNode = None
-		self.funcStoreWay = None
-		self.funcStoreRelation = None
-		self.funcStoreBounds = None
-		self.funcStoreIsDiff = None
-		self.refTableLengthThreshold = 250
-		self.refTableMaxSize = 15000
+// ****** o5m decoder ******
 
-	def ResetDeltaCoding(self):
-		self.lastObjId = 0 #Used in delta encoding
-		self.lastTimeStamp = 0
-		self.lastChangeSet = 0
-		self.stringPairs = []
-		self.lastLat = 0
-		self.lastLon = 0
-		self.lastRefNode = 0
-		self.lastRefWay = 0
-		self.lastRefRelation = 0
-	
-	def DecodeNext(self):
-		code = struct.unpack("B", self.handle.read(1))[0]
-		#print "found", hex(code)
-		if code == 0x10:
-			self.DecodeNode()
-			return False
-		if code == 0x11:
-			self.DecodeWay()
-			return False
-		if code == 0x12:
-			self.DecodeRelation()
-			return False
-		if code == 0xdb:
-			self.DecodeBoundingBox()
-			return False
-		if code == 0xff:
-			#Used in delta encoding information
-			self.ResetDeltaCoding()
-			return False #Reset code
-		if code == 0xfe:
-			return True #End of file
-		if code >= 0xF0 and code <= 0xFF:
-			return False
-	
-		#Default behavior to skip unknown data
-		length = Encoding.DecodeVarint(self.handle)
-		unknownDataSet = self.handle.read(length)
+O5mDecode::O5mDecode(std::istream &handleIn) : handle(handleIn)
+{
+	char tmp = handle.get();
+	if(handle.fail())
+		throw std::runtime_error("Error reading input");
+	std::string tmp2(&tmp, 1);
+	if(tmp2 != "\xff")
+		throw std::runtime_error("First byte has wrong value");
+
+	tmp = handle.get();
+	if(handle.fail())
+		throw std::runtime_error("Error reading input");
+	std::string tmp3(&tmp, 1);
+	if(tmp3 != "\xe0")
+		throw std::runtime_error("Missing header");
+
+	this->ResetDeltaCoding();
+/*	self.funcStoreNode = None
+	self.funcStoreWay = None
+	self.funcStoreRelation = None
+	self.funcStoreBounds = None
+	self.funcStoreIsDiff = None*/
+	this->refTableLengthThreshold = 250;
+	this->refTableMaxSize = 15000;
+}
+
+O5mDecode::~O5mDecode()
+{
+
+}
+
+void O5mDecode::ResetDeltaCoding()
+{
+	this->lastObjId = 0; //Used in delta encoding
+	this->lastTimeStamp = 0;
+	this->lastChangeSet = 0;
+	this->stringPairs.clear();
+	this->lastLat = 0;
+	this->lastLon = 0;
+	this->lastRefNode = 0;
+	this->lastRefWay = 0;
+	this->lastRefRelation = 0;
+}
+
+bool O5mDecode::DecodeNext()
+{
+	char code = this->handle.get();
+	std::cout << "found " << (unsigned int)code << std::endl;
+	/*if code == 0x10:
+		self.DecodeNode()
 		return False
+	if code == 0x11:
+		self.DecodeWay()
+		return False
+	if code == 0x12:
+		self.DecodeRelation()
+		return False
+	if code == 0xdb:
+		self.DecodeBoundingBox()
+		return False*/
+	if(code == 0xff)
+	{	
+		//Used in delta encoding information
+		this->ResetDeltaCoding();
+		return false; //Reset code
+	}
+	if(code == 0xfe)
+	{
+		return true; //End of file
+	}
+	if(code >= 0xF0 and code <= 0xFF)
+	{
+		return false;
+	}
 
-	def DecodeHeader(self):
-		length = Encoding.DecodeVarint(self.handle)
-		fileType = self.handle.read(length)
-		if self.funcStoreIsDiff != None:
-			self.funcStoreIsDiff("o5c2"==fileType)
-	
+	//Default behavior to skip unknown data
+	uint64_t length = DecodeVarint(this->handle);
+	tmpBuff.resize(length);
+	this->handle.read(&tmpBuff[0], length);
+	return false;
+}
+
+void O5mDecode::DecodeHeader()
+{
+	uint64_t length = DecodeVarint(this->handle);
+	std::string fileType;
+	fileType.resize(length);
+	this->handle.read(&fileType[0], length);
+	//if self.funcStoreIsDiff != None:
+	//	self.funcStoreIsDiff("o5c2"==fileType)
+}
+
+	/*
 	def DecodeBoundingBox(self):
 		length = Encoding.DecodeVarint(self.handle)
 		
@@ -300,6 +333,10 @@ class O5mDecode(object):
 		if self.funcStoreRelation is not None:
 			self.funcStoreRelation(objectId, metaData, tags, refs)
 
+	*/
+
+
+/*
 # ****** encode o5m ******
 
 class O5mEncode(object):
@@ -534,9 +571,5 @@ class O5mEncode(object):
 		self.handle.write(b"\xfe")
 */
 
-int main()
-{
-	TestDecodeNumber();
-	TestEncodeNumber();
-}
+
 
