@@ -118,12 +118,12 @@ bool O5mDecode::DecodeNext()
 	case 0x10:
 		this->DecodeNode();
 		return false;
-	/*if code == 0x11:
-		self.DecodeWay()
-		return false
-	if code == 0x12:
-		self.DecodeRelation()
-		return false*/
+	case 0x11:
+		this->DecodeWay();
+		return false;
+	/*case 0x12:
+		this->DecodeRelation();
+		return false;*/
 	case 0xdb:
 		this->DecodeBoundingBox();
 		return false;
@@ -295,116 +295,134 @@ void O5mDecode::DecodeNode()
 	double lat = this->lastLat / 1e7;
 
 	std::string firstString, secondString;
-	TagMap tags;
+	this->tmpTagsBuff.clear();
 	while(!nodeDataStream.eof())
 	{
 		bool ok = this->ReadStringPair(nodeDataStream, firstString, secondString);
-		if(ok) tags[firstString] = secondString;
+		if(ok) this->tmpTagsBuff[firstString] = secondString;
 	}
 
 	if(this->funcStoreNode != NULL)
-		this->funcStoreNode(objectId, this->tmpMetaData, tags, lat, lon);
+		this->funcStoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
 }
 
+void O5mDecode::DecodeWay()
+{
+	uint64_t length = DecodeVarint(this->handle);
+	std::string &objData = tmpBuff;
+	objData.resize(length);
+	this->handle.read(&objData[0], length);
+
+	//Decode object ID
+	std::istringstream objDataStream(objData);
+	int64_t deltaId = DecodeZigzag(objDataStream);
+	this->lastObjId += deltaId;
+	int64_t objectId = this->lastObjId;
+	//print "objectId", objectId
+
+	this->DecodeMetaData(objDataStream, this->tmpMetaData);
+
+	uint64_t refLen = DecodeVarint(objDataStream);
+	//print "len ref", refLen
+
+	std::string refData;
+	refData.resize(refLen);
+	objDataStream.read(&refData[0], refLen);
+	std::istringstream refDataStream(refData);
+	this->tmpRefsBuff.clear();
+	while(!refDataStream.eof())
+	{
+		try {
+			this->lastRefNode += DecodeZigzag(refDataStream);
+		}
+		catch (std::runtime_error &err)
+		{
+			if(refDataStream.eof())
+				continue;
+			throw err;
+		}
+		this->tmpRefsBuff.push_back(this->lastRefNode);
+	}
+
+	std::string firstString, secondString;
+	this->tmpTagsBuff.clear();
+	while(!objDataStream.eof())
+	{
+		bool ok = this->ReadStringPair(objDataStream, firstString, secondString);
+		if(ok) this->tmpTagsBuff[firstString] = secondString;
+	}
+
+	if (this->funcStoreWay != NULL)
+		this->funcStoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
+}
+
+void O5mDecode::DecodeRelation()
+{
+	uint64_t length = DecodeVarint(this->handle);
+	std::string &objData = tmpBuff;
+	objData.resize(length);
+	this->handle.read(&objData[0], length);
+
+	//Decode object ID
+	std::istringstream objDataStream(objData);
+	int64_t deltaId = DecodeZigzag(objDataStream);
+	this->lastObjId += deltaId;
+	int64_t objectId = this->lastObjId;
+	//print "objectId", objectId
+
+	this->DecodeMetaData(objDataStream, this->tmpMetaData);
 /*
-	def DecodeWay(self):
-		length = Encoding.DecodeVarint(self.handle)
-		objData = self.handle.read(length)
+	refLen = DecodeVarint(objDataStream)
+	//print "len ref", refLen
 
-		#Decode object ID
-		objDataStream = BytesIO(objData)
-		deltaId = Encoding.DecodeZigzag(objDataStream)
-		self.lastObjId += deltaId
-		objectId = self.lastObjId 
-		#print "objectId", objectId
+	refStart = objDataStream.tell()
+	refs = []
 
-		metaData = self.DecodeMetaData(objDataStream)
+	while objDataStream.tell() < refStart + refLen:
+		deltaRef = DecodeZigzag(objDataStream)
+		refIndex = DecodeVarint(objDataStream) #Index into reference table
+		if refIndex == 0:
+			typeAndRoleRaw = self.DecodeSingleString(objDataStream)
+			typeAndRole = typeAndRoleRaw.decode("utf-8")
+			if len(typeAndRoleRaw) <= self.refTableLengthThreshold:
+				self.AddBuffToStringRefTable(typeAndRoleRaw)
+		else:
+			typeAndRole = self.stringPairs[-refIndex].decode("utf-8")
 
-		refLen = Encoding.DecodeVarint(objDataStream)
-		#print "len ref", refLen
+		typeCode = int(typeAndRole[0])
+		role = typeAndRole[1:]
+		refId = None
+		if typeCode == 0:
+			self.lastRefNode += deltaRef
+			refId = self.lastRefNode
+		if typeCode == 1:
+			self.lastRefWay += deltaRef
+			refId = self.lastRefWay
+		if typeCode == 2:
+			self.lastRefRelation += deltaRef
+			refId = self.lastRefRelation
+		typeStr = None
+		if typeCode == 0:
+			typeStr = "node"
+		if typeCode == 1:
+			typeStr = "way"
+		if typeCode == 2:
+			typeStr = "relation"
+		refs.append((typeStr, refId, role))
+		#print "rref", refId, typeCode, role
 
-		refStart = objDataStream.tell()
-		refs = []
-		while objDataStream.tell() < refStart + refLen:
-			self.lastRefNode += Encoding.DecodeZigzag(objDataStream)
-			refs.append(self.lastRefNode)
-			#print "ref", self.lastRefNode
+	std::string firstString, secondString;
+	this->tmpTagsBuff.clear();
+	while(!nodeDataStream.eof())
+	{
+		bool ok = this->ReadStringPair(nodeDataStream, firstString, secondString);
+		if(ok) this->tmpTagsBuff[firstString] = secondString;
+	}
 
-		tags = {}
-		while objDataStream.tell() < len(objData):
-			firstString, secondString = self.ReadStringPair(objDataStream)
-			#print "strlen", len(firstString), len(secondString)
-			#print "str", firstString.decode("utf-8"), secondString.decode("utf-8")
-			tags[firstString.decode("utf-8")] = secondString.decode("utf-8")
-		#print tags
-
-		if self.funcStoreWay is not None:
-			self.funcStoreWay(objectId, metaData, tags, refs)
-
-	def DecodeRelation(self):
-		length = Encoding.DecodeVarint(self.handle)
-		objData = self.handle.read(length)
-
-		#Decode object ID
-		objDataStream = BytesIO(objData)
-		deltaId = Encoding.DecodeZigzag(objDataStream)
-		self.lastObjId += deltaId
-		objectId = self.lastObjId 
-		#print "objectId", objectId
-
-		metaData = self.DecodeMetaData(objDataStream)
-
-		refLen = Encoding.DecodeVarint(objDataStream)
-		#print "len ref", refLen
-
-		refStart = objDataStream.tell()
-		refs = []
-
-		while objDataStream.tell() < refStart + refLen:
-			deltaRef = Encoding.DecodeZigzag(objDataStream)
-			refIndex = Encoding.DecodeVarint(objDataStream) #Index into reference table
-			if refIndex == 0:
-				typeAndRoleRaw = self.DecodeSingleString(objDataStream)
-				typeAndRole = typeAndRoleRaw.decode("utf-8")
-				if len(typeAndRoleRaw) <= self.refTableLengthThreshold:
-					self.AddBuffToStringRefTable(typeAndRoleRaw)
-			else:
-				typeAndRole = self.stringPairs[-refIndex].decode("utf-8")
-
-			typeCode = int(typeAndRole[0])
-			role = typeAndRole[1:]
-			refId = None
-			if typeCode == 0:
-				self.lastRefNode += deltaRef
-				refId = self.lastRefNode
-			if typeCode == 1:
-				self.lastRefWay += deltaRef
-				refId = self.lastRefWay
-			if typeCode == 2:
-				self.lastRefRelation += deltaRef
-				refId = self.lastRefRelation
-			typeStr = None
-			if typeCode == 0:
-				typeStr = "node"
-			if typeCode == 1:
-				typeStr = "way"
-			if typeCode == 2:
-				typeStr = "relation"
-			refs.append((typeStr, refId, role))
-			#print "rref", refId, typeCode, role
-
-		tags = {}
-		while objDataStream.tell() < len(objData):
-			firstString, secondString = self.ReadStringPair(objDataStream)
-			#print "strlen", len(firstString), len(secondString)
-			#print "str", firstString.decode("utf-8"), secondString.decode("utf-8")
-			tags[firstString.decode("utf-8")] = secondString.decode("utf-8")
-		#print tags
-
-		if self.funcStoreRelation is not None:
-			self.funcStoreRelation(objectId, metaData, tags, refs)
-
-	*/
+	if self.funcStoreRelation is not None:
+		self.funcStoreRelation(objectId, metaData, tags, refs)
+*/
+}
 
 
 /*

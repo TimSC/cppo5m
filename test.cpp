@@ -16,6 +16,11 @@ void FuncStoreNode(int64_t objId, const class MetaData &metaData, TagMap &tags, 
 		cout << "tag: " << it->first << "\t" << it->second << endl;
 }
 
+void FuncStoreWay(int64_t objId, const class MetaData &metaData, TagMap &tags, std::vector<int64_t> &refs)
+{
+	cout << "way " << objId << endl;
+}
+
 int main()
 {
 	std::ifstream infi("o5mtest.o5m");
@@ -23,6 +28,7 @@ int main()
 	class O5mDecode dec(infi);
 	dec.funcStoreBounds = BoundingBox;
 	dec.funcStoreNode = FuncStoreNode;
+	dec.funcStoreWay = FuncStoreWay;
 	dec.DecodeHeader();
 
 	while (!infi.eof())

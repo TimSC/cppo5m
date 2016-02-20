@@ -45,9 +45,12 @@ protected:
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
 
+	//Various buffers to avoid continuously reallocating memory
 	std::string tmpBuff;
 	class MetaData tmpMetaData;
 	std::string combinedRawTmpBuff;
+	std::vector<int64_t> tmpRefsBuff;
+	TagMap tmpTagsBuff;
 
 	void DecodeBoundingBox();
 	void DecodeSingleString(std::istream &stream, std::string &out);
@@ -56,6 +59,8 @@ protected:
 	void DecodeMetaData(std::istream &nodeDataStream, class MetaData &out);
 	bool ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr);
 	void DecodeNode();
+	void DecodeWay();
+	void DecodeRelation();
 
 public:
 	O5mDecode(std::istream &handleIn);
@@ -66,7 +71,7 @@ public:
 	void DecodeHeader();
 
 	void (*funcStoreNode)(int64_t, const class MetaData &, TagMap &, double, double);
-	void (*funcStoreWay)();
+	void (*funcStoreWay)(int64_t, const class MetaData &, TagMap &, std::vector<int64_t> &);
 	void (*funcStoreRelation)();
 	void (*funcStoreBounds)(double, double, double, double);
 	void (*funcStoreIsDiff)(bool);
