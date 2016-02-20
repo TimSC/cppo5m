@@ -70,9 +70,9 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 
-	void (*funcStoreNode)(int64_t, const class MetaData &, TagMap &, double, double);
-	void (*funcStoreWay)(int64_t, const class MetaData &, TagMap &, std::vector<int64_t> &);
-	void (*funcStoreRelation)();
+	void (*funcStoreNode)(int64_t, const class MetaData &, const TagMap &, double, double);
+	void (*funcStoreWay)(int64_t, const class MetaData &, const TagMap &, std::vector<int64_t> &);
+	void (*funcStoreRelation)(int64_t, const MetaData &, const TagMap &, std::vector<std::string>, std::vector<int64_t>, std::vector<std::string>);
 	void (*funcStoreBounds)(double, double, double, double);
 	void (*funcStoreIsDiff)(bool);
 };

@@ -118,12 +118,15 @@ bool O5mDecode::DecodeNext()
 	case 0x10:
 		this->DecodeNode();
 		return false;
+		break;
 	case 0x11:
 		this->DecodeWay();
 		return false;
-	/*case 0x12:
+		break;
+	case 0x12:
 		this->DecodeRelation();
-		return false;*/
+		return false;
+		break;
 	case 0xdb:
 		this->DecodeBoundingBox();
 		return false;
@@ -371,294 +374,89 @@ void O5mDecode::DecodeRelation()
 	//print "objectId", objectId
 
 	this->DecodeMetaData(objDataStream, this->tmpMetaData);
-/*
-	refLen = DecodeVarint(objDataStream)
+
+	uint64_t refLen = DecodeVarint(objDataStream);
 	//print "len ref", refLen
 
-	refStart = objDataStream.tell()
-	refs = []
+	std::string refData;
+	refData.resize(refLen);
+	objDataStream.read(&refData[0], refLen);
+	std::istringstream refDataStream(refData);
 
-	while objDataStream.tell() < refStart + refLen:
-		deltaRef = DecodeZigzag(objDataStream)
-		refIndex = DecodeVarint(objDataStream) #Index into reference table
-		if refIndex == 0:
-			typeAndRoleRaw = self.DecodeSingleString(objDataStream)
-			typeAndRole = typeAndRoleRaw.decode("utf-8")
-			if len(typeAndRoleRaw) <= self.refTableLengthThreshold:
-				self.AddBuffToStringRefTable(typeAndRoleRaw)
-		else:
-			typeAndRole = self.stringPairs[-refIndex].decode("utf-8")
+	std::vector<int64_t> refIds;
+	std::vector<std::string> refRoles, refTypeStr;
 
-		typeCode = int(typeAndRole[0])
-		role = typeAndRole[1:]
-		refId = None
-		if typeCode == 0:
-			self.lastRefNode += deltaRef
-			refId = self.lastRefNode
-		if typeCode == 1:
-			self.lastRefWay += deltaRef
-			refId = self.lastRefWay
-		if typeCode == 2:
-			self.lastRefRelation += deltaRef
-			refId = self.lastRefRelation
-		typeStr = None
-		if typeCode == 0:
-			typeStr = "node"
-		if typeCode == 1:
-			typeStr = "way"
-		if typeCode == 2:
-			typeStr = "relation"
-		refs.append((typeStr, refId, role))
-		#print "rref", refId, typeCode, role
+	while (!refDataStream.eof())
+	{
+		int64_t deltaRef = 0;
+		try {
+			deltaRef += DecodeZigzag(refDataStream);
+		}
+		catch (std::runtime_error &err)
+		{
+			if(refDataStream.eof())
+				continue;
+			throw err;
+		}
+
+		uint64_t refIndex = DecodeVarint(refDataStream); //Index into reference table
+		std::string typeAndRole, typeAndRoleRaw;
+		if(refIndex == 0)
+		{
+			this->DecodeSingleString(refDataStream, typeAndRoleRaw);
+			typeAndRole = typeAndRoleRaw;
+			//FIXME This this comparison on UTF-8 encoded or wide chars? probably not utf-8!
+			if(typeAndRoleRaw.size() <= this->refTableLengthThreshold)
+				this->AddBuffToStringRefTable(typeAndRoleRaw);
+		}
+		else
+		{
+			int64_t offset = this->stringPairs.size()-refIndex;
+			if(offset < 0 || offset >= this->stringPairs.size())
+				throw std::runtime_error("o5m reference out of range");
+			typeAndRole = this->stringPairs[offset];
+		}
+
+		char typeCodeStr[] = "a";
+		typeCodeStr[0] = typeAndRole[0];
+		int typeCode = atoi(typeCodeStr);
+		std::string role(&typeAndRole[1], typeAndRole.size()-1);
+		int64_t refId = 0;
+		std::string typeStr;
+		switch(typeCode)
+		{
+		case 0:
+			this->lastRefNode += deltaRef;
+			refId = this->lastRefNode;
+			typeStr = "node";
+			break;
+		case 1:
+			this->lastRefWay += deltaRef;
+			refId = this->lastRefWay;
+			typeStr = "way";
+			break;
+		case 2:
+			this->lastRefRelation += deltaRef;
+			refId = this->lastRefRelation;
+			typeStr = "relation";
+			break;
+		}
+
+		refIds.push_back(refId);
+		refRoles.push_back(role);
+		refTypeStr.push_back(typeStr);
+	}
 
 	std::string firstString, secondString;
 	this->tmpTagsBuff.clear();
-	while(!nodeDataStream.eof())
+	while(!objDataStream.eof())
 	{
-		bool ok = this->ReadStringPair(nodeDataStream, firstString, secondString);
+		bool ok = this->ReadStringPair(objDataStream, firstString, secondString);
 		if(ok) this->tmpTagsBuff[firstString] = secondString;
 	}
 
-	if self.funcStoreRelation is not None:
-		self.funcStoreRelation(objectId, metaData, tags, refs)
-*/
+	if(this->funcStoreRelation != NULL)
+		this->funcStoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, refTypeStr, refIds, refRoles);
+
 }
-
-
-/*
-# ****** encode o5m ******
-
-class O5mEncode(object):
-	def __init__(self, handle):
-		self.handle = handle
-		self.handle.write(b"\xff")
-		
-		self.ResetDeltaCoding()
-		self.funcStoreNode = None
-		self.funcStoreWay = None
-		self.funcStoreRelation = None
-		self.funcStoreBounds = None
-		self.funcStoreIsDiff = None
-		self.refTableLengthThreshold = 250
-		self.refTableMaxSize = 15000
-
-	def ResetDeltaCoding(self):
-		self.lastObjId = 0 #Used in delta encoding
-		self.lastTimeStamp = 0
-		self.lastChangeSet = 0
-		self.stringPairs = []
-		self.lastLat = 0
-		self.lastLon = 0
-		self.lastRefNode = 0
-		self.lastRefWay = 0
-		self.lastRefRelation = 0
-
-	def StoreIsDiff(self, isDiff):
-		self.handle.write(b"\xe0")
-		if isDiff:
-			headerData = "o5c2".encode("utf-8")
-		else:
-			headerData = "o5m2".encode("utf-8")
-		self.handle.write(Encoding.EncodeVarint(len(headerData)))
-		self.handle.write(headerData)
-
-	def StoreBounds(self, bbox):
-
-		#south-western corner 
-		bboxData = []
-		bboxData.append(Encoding.EncodeZigzag(round(bbox[0] * 1e7))) #lon
-		bboxData.append(Encoding.EncodeZigzag(round(bbox[1] * 1e7))) #lat
-
-		#north-eastern corner
-		bboxData.append(Encoding.EncodeZigzag(round(bbox[2] * 1e7))) #lon
-		bboxData.append(Encoding.EncodeZigzag(round(bbox[3] * 1e7))) #lat
-		
-		combinedData = b''.join(bboxData)
-		self.handle.write(b'\xdb')
-		self.handle.write(Encoding.EncodeVarint(len(combinedData)))
-		self.handle.write(combinedData)
-
-	def EncodeMetaData(self, version, timestamp, changeset, uid, username, outStream):
-		#Decode author and time stamp
-		if version != 0 and version != None:
-			outStream.write(Encoding.EncodeVarint(version))
-			if timestamp != None:
-				timestamp = calendar.timegm(timestamp.utctimetuple())
-			else:
-				timestamp = 0
-			deltaTime = timestamp - self.lastTimeStamp
-			outStream.write(Encoding.EncodeZigzag(deltaTime))
-			self.lastTimeStamp = timestamp
-			#print "timestamp", self.lastTimeStamp, deltaTime
-			if timestamp != 0:
-				#print changeset
-				deltaChangeSet = changeset - self.lastChangeSet
-				outStream.write(Encoding.EncodeZigzag(deltaChangeSet))
-				self.lastChangeSet = changeset
-				encUid = b""
-				if uid is not None:
-					encUid = Encoding.EncodeVarint(uid)
-				encUsername = b""
-				if username is not None:
-					encUsername = username.encode("utf-8")
-				self.WriteStringPair(encUid, encUsername, outStream)
-		else:
-			outStream.write(Encoding.EncodeVarint(0))
-
-	def EncodeSingleString(self, strIn):
-		return strIn + b'\x00'
-
-	def WriteStringPair(self, firstString, secondString, tmpStream):
-		encodedStrings = firstString + b"\x00" + secondString + b"\x00"
-		if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
-			try:
-				existIndex = self.stringPairs.index(encodedStrings)
-				tmpStream.write(Encoding.EncodeVarint(len(self.stringPairs) - existIndex))
-				return
-			except ValueError:
-				pass #Key value pair not currently in reference table
-
-		tmpStream.write(b"\x00")
-		tmpStream.write(encodedStrings)
-		if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
-			self.AddToRefTable(encodedStrings)
-
-	def AddToRefTable(self, encodedStrings):
-		self.stringPairs.append(encodedStrings)
-
-		#Limit size of reference table
-		if len(self.stringPairs) > self.refTableMaxSize:
-			self.stringPairs = self.stringPairs[-self.refTableMaxSize:]
-
-	def StoreNode(self, objectId, metaData, tags, pos):
-		self.handle.write(b"\x10")
-
-		#Object ID
-		tmpStream = BytesIO()
-		deltaId = objectId - self.lastObjId
-		tmpStream.write(Encoding.EncodeZigzag(deltaId))
-		self.lastObjId = objectId
-
-		version, timestamp, changeset, uid, username = metaData
-		self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
-
-		#Position
-		lon = round(pos[1] * 1e7)
-		deltaLon = lon - self.lastLon
-		tmpStream.write(Encoding.EncodeZigzag(deltaLon))
-		self.lastLon = lon
-		lat = round(pos[0] * 1e7)
-		deltaLat = lat - self.lastLat
-		tmpStream.write(Encoding.EncodeZigzag(deltaLat))
-		self.lastLat = lat
-
-		for key in tags:
-			val = tags[key]
-			self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
-
-		binData = tmpStream.getvalue()
-		self.handle.write(Encoding.EncodeVarint(len(binData)))
-		self.handle.write(binData)
-
-	def StoreWay(self, objectId, metaData, tags, refs):
-		self.handle.write(b"\x11")
-
-		#Object ID
-		tmpStream = BytesIO()
-		deltaId = objectId - self.lastObjId
-		tmpStream.write(Encoding.EncodeZigzag(deltaId))
-		self.lastObjId = objectId
-
-		#Store meta data
-		version, timestamp, changeset, uid, username = metaData
-		self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
-
-		#Store nodes
-		refStream = BytesIO()
-		for ref in refs:
-			deltaRef = ref - self.lastRefNode
-			refStream.write(Encoding.EncodeZigzag(deltaRef))
-			self.lastRefNode = ref
-
-		encRefs = refStream.getvalue()
-		tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
-		tmpStream.write(encRefs)
-
-		#Write tags
-		for key in tags:
-			val = tags[key]
-			self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
-
-		binData = tmpStream.getvalue()
-		self.handle.write(Encoding.EncodeVarint(len(binData)))
-		self.handle.write(binData)
-		
-	def StoreRelation(self, objectId, metaData, tags, refs):
-		self.handle.write(b"\x12")
-
-		#Object ID
-		tmpStream = BytesIO()
-		deltaId = objectId - self.lastObjId
-		tmpStream.write(Encoding.EncodeZigzag(deltaId))
-		self.lastObjId = objectId
-
-		#Store meta data
-		version, timestamp, changeset, uid, username = metaData
-		self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
-
-		#Store referenced children
-		refStream = BytesIO()
-		for typeStr, refId, role in refs:
-			typeCode = None
-			deltaRef = None
-			if typeStr == "node":
-				typeCode = 0
-				deltaRef = refId - self.lastRefNode
-				self.lastRefNode = refId
-			if typeStr == "way":
-				typeCode = 1
-				deltaRef = refId - self.lastRefWay
-				self.lastRefWay = refId
-			if typeStr == "relation":
-				typeCode = 2
-				deltaRef = refId - self.lastRefRelation
-				self.lastRefRelation = refId
-
-			refStream.write(Encoding.EncodeZigzag(deltaRef))
-
-			typeCodeAndRole = (str(typeCode) + role).encode("utf-8")
-			try:
-				refIndex = self.stringPairs.index(typeCodeAndRole)
-				refStream.write(Encoding.EncodeVarint(len(self.stringPairs) - refIndex))
-			except ValueError:
-				refStream.write(b'\x00') #String start byte
-				refStream.write(self.EncodeSingleString(typeCodeAndRole))
-				if len(typeCodeAndRole) <= self.refTableLengthThreshold:
-					self.AddToRefTable(typeCodeAndRole)
-
-		encRefs = refStream.getvalue()
-		tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
-		tmpStream.write(encRefs)
-
-		#Write tags
-		for key in tags:
-			val = tags[key]
-			self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
-
-		binData = tmpStream.getvalue()
-		self.handle.write(Encoding.EncodeVarint(len(binData)))
-		self.handle.write(binData)
-
-	def Sync(self):
-		self.handle.write(b"\xee\x07\x00\x00\x00\x00\x00\x00\x00")
-
-	def Reset(self):
-		self.handle.write(b"\xff")
-		self.ResetDeltaCoding()
-
-	def Finish(self):
-		self.handle.write(b"\xfe")
-*/
-
-
 
