@@ -8,18 +8,6 @@
 
 // ****** o5m utilities ******
 
-size_t Utf8Length(const std::string& str)
-{
-	size_t count = 0;
-	for(size_t cursor = 0; cursor < str.size(); cursor++)
-	{
-		char ch = str[cursor];
-		if(!(ch&0x80) || ((ch&0xC0) == 0xC0))
-			count += 1;
-	}
-	return count;
-}
-
 void TestDecodeNumber()
 {
 	assert (DecodeVarint("\x05") == 5);
@@ -44,16 +32,6 @@ void TestEncodeNumber()
 	assert (EncodeZigzag(-2) == "\x03");
 	assert (EncodeZigzag(-3) == "\x05");
 	assert (EncodeZigzag(-65) == "\x81\x01");
-}
-
-void TestUtf8Length()
-{
-	std::string test("κόσμε");
-	assert (Utf8Length(test) == 5);
-	test = "Τη γλώσσα";
-	assert (Utf8Length(test) == 9);
-	test = "ვეპხის ტყაოსანი\nშოთა რუსთაველი";
-	assert (Utf8Length(test) == 30);
 }
 
 MetaData::MetaData()
@@ -421,13 +399,12 @@ void O5mDecode::DecodeRelation()
 		}
 
 		uint64_t refIndex = DecodeVarint(refDataStream); //Index into reference table
-		std::string typeAndRole, typeAndRoleRaw;
+		std::string typeAndRole;
 		if(refIndex == 0)
 		{
-			this->DecodeSingleString(refDataStream, typeAndRoleRaw);
-			size_t typeAndRoleLen = Utf8Length(typeAndRoleRaw);
-			if(typeAndRoleLen <= this->refTableLengthThreshold)
-				this->AddBuffToStringRefTable(typeAndRoleRaw);
+			this->DecodeSingleString(refDataStream, typeAndRole);
+			if(typeAndRole.size() <= this->refTableLengthThreshold)
+				this->AddBuffToStringRefTable(typeAndRole);
 		}
 		else
 		{

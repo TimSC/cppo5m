@@ -10,7 +10,6 @@
 
 void TestDecodeNumber();
 void TestEncodeNumber();
-void TestUtf8Length();
 
 typedef std::map<std::string, std::string> TagMap;
 

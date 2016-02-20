@@ -4,6 +4,5 @@ int main()
 {
 	TestDecodeNumber();
 	TestEncodeNumber();
-	TestUtf8Length();
 }
 
