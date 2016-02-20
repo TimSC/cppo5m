@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdexcept>
 #include <iostream>
+#include <stdlib.h>
 #include "varint.h"
 #include "o5m.h"
 
@@ -31,6 +32,35 @@ void TestEncodeNumber()
 	assert (EncodeZigzag(-2) == "\x03");
 	assert (EncodeZigzag(-3) == "\x05");
 	assert (EncodeZigzag(-65) == "\x81\x01");
+}
+
+
+MetaData::MetaData()
+{
+	version=0;
+	timestamp=0;
+	changeset=0;
+	uid=0;
+}
+
+MetaData::~MetaData()
+{
+
+}
+
+MetaData::MetaData( const MetaData &obj)
+{
+	*this = obj;
+}
+
+MetaData& MetaData::operator=(const MetaData &a)
+{
+	version = a.version;
+	timestamp = a.timestamp;
+	changeset = a.changeset;
+	uid = a.uid;
+	username = a.username;
+	return *this;
 }
 
 // ****** o5m decoder ******
@@ -85,10 +115,10 @@ bool O5mDecode::DecodeNext()
 	std::cout << "found " << (unsigned int)code << std::endl;
 	switch(code)
 	{
-	/*if code == 0x10:
-		self.DecodeNode()
-		return false
-	if code == 0x11:
+	case 0x10:
+		this->DecodeNode();
+		return false;
+	/*if code == 0x11:
 		self.DecodeWay()
 		return false
 	if code == 0x12:
@@ -142,101 +172,127 @@ void O5mDecode::DecodeBoundingBox()
 	if(this->funcStoreBounds != NULL)
 		this->funcStoreBounds(x1, y1, x2, y2);
 }
+
+void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
+{
+	char tmp[] = "a";
+	out.clear();
+	char code = 0x01;
+	while(code != 0x00)
+	{
+		code = stream.get();
+		if (code != 0x00)
+		{
+			tmp[0] = code;
+			out.append(tmp);
+		}
+	}
+}
+
+void O5mDecode::ConsiderAddToStringRefTable(const std::string &firstStr, const std::string &secondStr)
+{
+	//Consider adding pair to string reference table
+	if(firstStr.size() + secondStr.size() <= this->refTableLengthThreshold)
+	{
+		std::stringstream combinedRaw;
+		combinedRaw << firstStr;
+		combinedRaw << "\x00";
+		combinedRaw << secondStr;
+		combinedRaw << "\x00";
+		this->AddBuffToStringRefTable(combinedRaw.str());
+	}
+}
+
+void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
+{
+	this->stringPairs.push_back(buff);
+
+	//Make sure it does not grow forever
+	while(this->stringPairs.size() > this->refTableMaxSize)
+		this->stringPairs.pop_front();
+}
+
+void O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
+{
+	uint64_t ref = DecodeVarint(stream);
+	if(ref == 0x00)
+	{
+		//print "new pair"
+		this->DecodeSingleString(stream, firstStr);
+		this->DecodeSingleString(stream, secondStr);
+		this->ConsiderAddToStringRefTable(firstStr, secondStr);
+	}
+	else
+	{
+		//print "ref", ref
+
+		std::string &prevPair = this->stringPairs[this->stringPairs.size()-ref];
+		std::istringstream ss(prevPair);
+		this->DecodeSingleString(ss, firstStr);
+		this->DecodeSingleString(ss, secondStr);
+	}
+}
+
+void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out)
+{
+	//Decode author and time stamp
+	out.version = DecodeVarint(nodeDataStream);
+	out.timestamp = 0;
+	out.changeset = 0;
+	out.uid = 0;
+	std::string uidStr;
+	out.username="";
+	if(out.version != 0)
+	{
+		int64_t deltaTime = DecodeZigzag(nodeDataStream);
+		this->lastTimeStamp += deltaTime;
+		out.timestamp = this->lastTimeStamp;
+		//print "timestamp", self.lastTimeStamp, deltaTime
+		if(out.timestamp != 0)
+		{
+			int64_t deltaChangeSet = DecodeZigzag(nodeDataStream);
+			this->lastChangeSet += deltaChangeSet;
+			out.changeset = this->lastChangeSet;
+			//print "changeset", self.lastChangeSet, deltaChangeSet
+			this->ReadStringPair(nodeDataStream, uidStr, out.username);
+			out.uid = atoi(uidStr.c_str());
+		}
+	}
+}
+
+void O5mDecode::DecodeNode()
+{
+	uint64_t length = DecodeVarint(this->handle);
+	std::string &nodeData = tmpBuff;
+	nodeData.resize(length);
+	this->handle.read(&nodeData[0], length);
+
+	//Decode object ID
+	std::istringstream nodeDataStream(nodeData);
+	int64_t deltaId = DecodeZigzag(nodeDataStream);
+	this->lastObjId += deltaId;
+	int64_t objectId = this->lastObjId; 
+
+	this->DecodeMetaData(nodeDataStream, this->tmpMetaData);
+
+	this->lastLon += DecodeZigzag(nodeDataStream);
+	this->lastLat += DecodeZigzag(nodeDataStream);
+	double lon = this->lastLon / 1e7;
+	double lat = this->lastLat / 1e7;
+
+	std::string firstString, secondString;
+	TagMap tags;
+	while(!nodeDataStream.eof())
+	{
+		this->ReadStringPair(nodeDataStream, firstString, secondString);
+		tags[firstString] = secondString;
+	}
+
+	if(this->funcStoreNode != NULL)
+		this->funcStoreNode(objectId, this->tmpMetaData, tags, lat, lon);
+}
+
 /*
-	def DecodeSingleString(self, stream):
-		outStr = BytesIO()
-		code = 0x01
-		while code != 0x00:
-			rawVal = stream.read(1)
-			code = struct.unpack("B", rawVal)[0]
-			if code != 0x00:
-				outStr.write(rawVal)
-		return outStr.getvalue()
-
-	def ConsiderAddToStringRefTable(self, firstStr, secondStr):
-		#Consider adding pair to string reference table
-		if len(firstStr) + len(secondStr) <= self.refTableLengthThreshold:
-			combinedRaw = firstStr+b"\x00"+secondStr+b"\x00"
-			self.AddBuffToStringRefTable(combinedRaw)
-
-	def AddBuffToStringRefTable(self, buff):
-		self.stringPairs.append(buff)
-
-		#Make sure it does not grow forever
-		if len(self.stringPairs) > self.refTableMaxSize:
-			self.stringPairs = self.stringPairs[-self.refTableMaxSize:]
-
-	def ReadStringPair(self, stream):
-		ref = Encoding.DecodeVarint(stream)
-		if ref == 0x00:
-			#print "new pair"
-			firstStr = self.DecodeSingleString(stream)
-			secondStr = self.DecodeSingleString(stream)
-			self.ConsiderAddToStringRefTable(firstStr, secondStr)
-		else:
-			#print "ref", ref
-			prevPair = BytesIO(self.stringPairs[-ref])
-			firstStr = self.DecodeSingleString(prevPair)
-			secondStr = self.DecodeSingleString(prevPair)
-		return firstStr, secondStr
-
-	def DecodeMetaData(self, nodeDataStream):
-		#Decode author and time stamp
-		version = Encoding.DecodeVarint(nodeDataStream)
-		timestamp = None
-		changeset = None
-		uid = None
-		username = None
-		if version != 0:
-			deltaTime = Encoding.DecodeZigzag(nodeDataStream)
-			self.lastTimeStamp += deltaTime
-			timestamp = datetime.datetime.utcfromtimestamp(self.lastTimeStamp)
-			#print "timestamp", self.lastTimeStamp, deltaTime
-			if self.lastTimeStamp != 0:
-				deltaChangeSet = Encoding.DecodeZigzag(nodeDataStream)
-				self.lastChangeSet += deltaChangeSet
-				changeset = self.lastChangeSet
-				#print "changeset", self.lastChangeSet, deltaChangeSet
-				firstString, secondString = self.ReadStringPair(nodeDataStream)
-
-				if len(firstString) > 0:
-					uid = Encoding.DecodeVarint(BytesIO(firstString))
-					#print "uid", uid
-				if len(secondString) > 0:
-					username = secondString.decode("utf-8")
-
-		return version, timestamp, changeset, uid, username
-
-	def DecodeNode(self):
-		length = Encoding.DecodeVarint(self.handle)
-		nodeData = self.handle.read(length)
-
-		#Decode object ID
-		nodeDataStream = BytesIO(nodeData)
-		deltaId = Encoding.DecodeZigzag(nodeDataStream)
-		self.lastObjId += deltaId
-		objectId = self.lastObjId 
-		#print "objectId", objectId
-
-		metaData = self.DecodeMetaData(nodeDataStream)
-
-		self.lastLon += Encoding.DecodeZigzag(nodeDataStream)
-		self.lastLat += Encoding.DecodeZigzag(nodeDataStream)
-		lon = self.lastLon / 1e7
-		lat = self.lastLat / 1e7
-		#print lat, lon
-
-		tags = {}
-		while nodeDataStream.tell() < len(nodeData):
-			firstString, secondString = self.ReadStringPair(nodeDataStream)
-			#print "strlen", len(firstString), len(secondString)
-			#print "str", firstString.decode("utf-8"), secondString.decode("utf-8")
-			tags[firstString.decode("utf-8")] = secondString.decode("utf-8")
-		#print tags
-
-		if self.funcStoreNode is not None:
-			self.funcStoreNode(objectId, metaData, tags, (lat, lon))
-
 	def DecodeWay(self):
 		length = Encoding.DecodeVarint(self.handle)
 		objData = self.handle.read(length)
