@@ -62,6 +62,7 @@ public:
 	OsmData();
 	virtual ~OsmData();
 	void LoadFromO5m(std::istream &fi);
+	void SaveToO5m(std::ostream &fi);
 
 	static void FuncStoreIsDiff(bool, void *userData);
 	static void FuncStoreBounds(double x1, double y1, double x2, double y2, void *userData);

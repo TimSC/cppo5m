@@ -81,5 +81,45 @@ public:
 	void *userData;
 };
 
+class O5mEncode
+{
+protected:
+	std::ostream &handle;
+
+	int64_t lastObjId;
+	int64_t lastTimeStamp;
+	int64_t lastChangeSet;
+	std::deque<std::string> stringPairs;
+	double lastLat;
+	double lastLon;
+	int64_t lastRefNode;
+	int64_t lastRefWay;
+	int64_t lastRefRelation;
+
+	unsigned refTableLengthThreshold;
+	unsigned refTableMaxSize;
+
+public:
+	O5mEncode(std::ostream &handle);
+	virtual ~O5mEncode();
+
+	void ResetDeltaCoding();
+
+	void Sync();
+	void Reset();
+	void Finish();
+
+	static void FuncStoreIsDiff(bool, void *userData);
+	static void FuncStoreBounds(double x1, double y1, double x2, double y2, void *userData);
+	static void FuncStoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon, void *userData);
+	static void FuncStoreWay(int64_t objId, const class MetaData &metaDta, 
+		const TagMap &tags, std::vector<int64_t> &refs, void *userData);
+	static void FuncStoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
+		std::vector<std::string> refRoles, void *userData);
+
+};
+
 #endif //_O5M_H
 

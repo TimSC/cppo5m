@@ -105,47 +105,23 @@ void OsmData::LoadFromO5m(std::istream &fi)
 	while (!fi.eof())
 		dec.DecodeNext();
 }
-/*
-	def SaveToO5m(self, fi):
-		enc = o5m.O5mEncode(fi)
-		enc.StoreIsDiff(self.isDiff)
-		for bbox in self.bounds:
-			enc.StoreBounds(bbox)
-		for nodeData in self.nodes:
-			enc.StoreNode(*nodeData)
-		enc.Reset()
-		for wayData in self.ways:
-			enc.StoreWay(*wayData)
-		enc.Reset()
-		for relationData in self.relations:
-			enc.StoreRelation(*relationData)
-		enc.Finish()
 
-	def LoadFromOsmXml(self, fi):
-		dec = osmxml.OsmXmlDecode(fi)
-		dec.funcStoreNode = self.StoreNode
-		dec.funcStoreWay = self.StoreWay
-		dec.funcStoreRelation = self.StoreRelation
-		dec.funcStoreBounds = self.StoreBounds
-		dec.funcStoreIsDiff = self.StoreIsDiff
-
-		eof = False
-		while not eof:
-			eof = dec.DecodeNext()
-	
-	def SaveToOsmXml(self, fi):
-		enc = osmxml.OsmXmlEncode(fi)
-		enc.StoreIsDiff(self.isDiff)
-		for bbox in self.bounds:
-			enc.StoreBounds(bbox)
-		for nodeData in self.nodes:
-			enc.StoreNode(*nodeData)
-		for wayData in self.ways:
-			enc.StoreWay(*wayData)
-		for relationData in self.relations:
-			enc.StoreRelation(*relationData)
-		enc.Finish()
-*/
+void OsmData::SaveToO5m(std::ostream &fi)
+{
+	class O5mEncode enc(fi);
+/*	enc.StoreIsDiff(this->isDiff)
+	foreach(bbox in this->bounds:
+		enc.StoreBounds(bbox)
+	for nodeData in self.nodes:
+		enc.StoreNode(*nodeData)
+	enc.Reset()
+	for wayData in self.ways:
+		enc.StoreWay(*wayData)
+	enc.Reset()
+	for relationData in self.relations:
+		enc.StoreRelation(*relationData)*/
+	enc.Finish();
+}
 
 void OsmData::FuncStoreIsDiff(bool d, void *userData)
 {

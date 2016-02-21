@@ -463,3 +463,245 @@ void O5mDecode::DecodeRelation()
 
 }
 
+// ************** o5m encoder ****************
+
+O5mEncode::O5mEncode(std::ostream &handleIn):
+	handle(handleIn),
+	refTableLengthThreshold(250),
+	refTableMaxSize(15000)
+{
+	this->handle.write("\xff", 1);
+	this->ResetDeltaCoding();
+}
+
+O5mEncode::~O5mEncode()
+{
+
+}
+
+void O5mEncode::ResetDeltaCoding()
+{
+	this->lastObjId = 0;
+	this->lastTimeStamp = 0;
+	this->lastChangeSet = 0;
+	this->stringPairs.clear();
+	this->lastLat = 0.0;
+	this->lastLon = 0.0;
+	this->lastRefNode = 0;
+	this->lastRefWay = 0;
+	this->lastRefRelation = 0;
+}
+
+/*
+def StoreIsDiff(self, isDiff):
+	self.handle.write(b"\xe0")
+	if isDiff:
+		headerData = "o5c2".encode("utf-8")
+	else:
+		headerData = "o5m2".encode("utf-8")
+	self.handle.write(Encoding.EncodeVarint(len(headerData)))
+	self.handle.write(headerData)
+
+def StoreBounds(self, bbox):
+
+	#south-western corner 
+	bboxData = []
+	bboxData.append(Encoding.EncodeZigzag(round(bbox[0] * 1e7))) #lon
+	bboxData.append(Encoding.EncodeZigzag(round(bbox[1] * 1e7))) #lat
+
+	#north-eastern corner
+	bboxData.append(Encoding.EncodeZigzag(round(bbox[2] * 1e7))) #lon
+	bboxData.append(Encoding.EncodeZigzag(round(bbox[3] * 1e7))) #lat
+	
+	combinedData = b''.join(bboxData)
+	self.handle.write(b'\xdb')
+	self.handle.write(Encoding.EncodeVarint(len(combinedData)))
+	self.handle.write(combinedData)
+
+def EncodeMetaData(self, version, timestamp, changeset, uid, username, outStream):
+	#Decode author and time stamp
+	if version != 0 and version != None:
+		outStream.write(Encoding.EncodeVarint(version))
+		if timestamp != None:
+			timestamp = calendar.timegm(timestamp.utctimetuple())
+		else:
+			timestamp = 0
+		deltaTime = timestamp - self.lastTimeStamp
+		outStream.write(Encoding.EncodeZigzag(deltaTime))
+		self.lastTimeStamp = timestamp
+		#print "timestamp", self.lastTimeStamp, deltaTime
+		if timestamp != 0:
+			#print changeset
+			deltaChangeSet = changeset - self.lastChangeSet
+			outStream.write(Encoding.EncodeZigzag(deltaChangeSet))
+			self.lastChangeSet = changeset
+			encUid = b""
+			if uid is not None:
+				encUid = Encoding.EncodeVarint(uid)
+			encUsername = b""
+			if username is not None:
+				encUsername = username.encode("utf-8")
+			self.WriteStringPair(encUid, encUsername, outStream)
+	else:
+		outStream.write(Encoding.EncodeVarint(0))
+
+def EncodeSingleString(self, strIn):
+	return strIn + b'\x00'
+
+def WriteStringPair(self, firstString, secondString, tmpStream):
+	encodedStrings = firstString + b"\x00" + secondString + b"\x00"
+	if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
+		try:
+			existIndex = self.stringPairs.index(encodedStrings)
+			tmpStream.write(Encoding.EncodeVarint(len(self.stringPairs) - existIndex))
+			return
+		except ValueError:
+			pass #Key value pair not currently in reference table
+
+	tmpStream.write(b"\x00")
+	tmpStream.write(encodedStrings)
+	if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
+		self.AddToRefTable(encodedStrings)
+
+def AddToRefTable(self, encodedStrings):
+	self.stringPairs.append(encodedStrings)
+
+	#Limit size of reference table
+	if len(self.stringPairs) > self.refTableMaxSize:
+		self.stringPairs = self.stringPairs[-self.refTableMaxSize:]
+
+def StoreNode(self, objectId, metaData, tags, pos):
+	self.handle.write(b"\x10")
+
+	#Object ID
+	tmpStream = BytesIO()
+	deltaId = objectId - self.lastObjId
+	tmpStream.write(Encoding.EncodeZigzag(deltaId))
+	self.lastObjId = objectId
+
+	version, timestamp, changeset, uid, username = metaData
+	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
+
+	#Position
+	lon = round(pos[1] * 1e7)
+	deltaLon = lon - self.lastLon
+	tmpStream.write(Encoding.EncodeZigzag(deltaLon))
+	self.lastLon = lon
+	lat = round(pos[0] * 1e7)
+	deltaLat = lat - self.lastLat
+	tmpStream.write(Encoding.EncodeZigzag(deltaLat))
+	self.lastLat = lat
+
+	for key in tags:
+		val = tags[key]
+		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
+
+	binData = tmpStream.getvalue()
+	self.handle.write(Encoding.EncodeVarint(len(binData)))
+	self.handle.write(binData)
+
+def StoreWay(self, objectId, metaData, tags, refs):
+	self.handle.write(b"\x11")
+
+	#Object ID
+	tmpStream = BytesIO()
+	deltaId = objectId - self.lastObjId
+	tmpStream.write(Encoding.EncodeZigzag(deltaId))
+	self.lastObjId = objectId
+
+	#Store meta data
+	version, timestamp, changeset, uid, username = metaData
+	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
+
+	#Store nodes
+	refStream = BytesIO()
+	for ref in refs:
+		deltaRef = ref - self.lastRefNode
+		refStream.write(Encoding.EncodeZigzag(deltaRef))
+		self.lastRefNode = ref
+
+	encRefs = refStream.getvalue()
+	tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
+	tmpStream.write(encRefs)
+
+	#Write tags
+	for key in tags:
+		val = tags[key]
+		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
+
+	binData = tmpStream.getvalue()
+	self.handle.write(Encoding.EncodeVarint(len(binData)))
+	self.handle.write(binData)
+	
+def StoreRelation(self, objectId, metaData, tags, refs):
+	self.handle.write(b"\x12")
+
+	#Object ID
+	tmpStream = BytesIO()
+	deltaId = objectId - self.lastObjId
+	tmpStream.write(Encoding.EncodeZigzag(deltaId))
+	self.lastObjId = objectId
+
+	#Store meta data
+	version, timestamp, changeset, uid, username = metaData
+	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
+
+	#Store referenced children
+	refStream = BytesIO()
+	for typeStr, refId, role in refs:
+		typeCode = None
+		deltaRef = None
+		if typeStr == "node":
+			typeCode = 0
+			deltaRef = refId - self.lastRefNode
+			self.lastRefNode = refId
+		if typeStr == "way":
+			typeCode = 1
+			deltaRef = refId - self.lastRefWay
+			self.lastRefWay = refId
+		if typeStr == "relation":
+			typeCode = 2
+			deltaRef = refId - self.lastRefRelation
+			self.lastRefRelation = refId
+
+		refStream.write(Encoding.EncodeZigzag(deltaRef))
+
+		typeCodeAndRole = (str(typeCode) + role).encode("utf-8")
+		try:
+			refIndex = self.stringPairs.index(typeCodeAndRole)
+			refStream.write(Encoding.EncodeVarint(len(self.stringPairs) - refIndex))
+		except ValueError:
+			refStream.write(b'\x00') #String start byte
+			refStream.write(self.EncodeSingleString(typeCodeAndRole))
+			if len(typeCodeAndRole) <= self.refTableLengthThreshold:
+				self.AddToRefTable(typeCodeAndRole)
+
+	encRefs = refStream.getvalue()
+	tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
+	tmpStream.write(encRefs)
+
+	#Write tags
+	for key in tags:
+		val = tags[key]
+		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
+
+	binData = tmpStream.getvalue()
+	self.handle.write(Encoding.EncodeVarint(len(binData)))
+	self.handle.write(binData)
+*/
+void O5mEncode::Sync()
+{
+	this->handle.write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
+}
+
+void O5mEncode::Reset()
+{
+	this->handle.write("\xff", 1);
+	this->ResetDeltaCoding();
+}
+
+void O5mEncode::Finish()
+{
+	this->handle.write("\xfe", 1);
+}
+
