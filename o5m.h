@@ -103,6 +103,7 @@ protected:
 	void WriteStringPair(const std::string &firstString, const std::string &secondString, 
 			std::ostream &tmpStream);
 	void AddToRefTable(const std::string &encodedStrings);
+	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
 public:
 	O5mEncode(std::ostream &handle);

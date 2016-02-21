@@ -552,10 +552,18 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 	}
 }
 
-/*void O5mEncode::EncodeSingleString(std::string &strIn)
+size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
 {
-	return strIn + b'\x00'
-}*/
+	indexFound = false;
+	for(size_t i=0; i< this->stringPairs.size(); i++)
+	{
+		if(this->stringPairs[i] != needle) continue;
+		indexFound = true;
+		return i;
+		break;
+	}
+	return 0;
+}
 
 void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
 	std::ostream &tmpStream)
@@ -566,15 +574,8 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 	encodedStrings.append("\x00",1);
 	if(firstString.size() + secondString.size() <= this->refTableLengthThreshold)
 	{
-		size_t existIndex = 0;
 		bool indexFound = false;
-		for(size_t i=0; i< this->stringPairs.size(); i++)
-		{
-			if(this->stringPairs[i] != encodedStrings) continue;
-			existIndex = i;
-			indexFound = true;
-			break;
-		}
+		size_t existIndex = FindStringPairsIndex(encodedStrings, indexFound);
 		if(indexFound) {
 			tmpStream << EncodeVarint(this->stringPairs.size() - existIndex);
 			return;
@@ -671,61 +672,83 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
 		std::vector<std::string> refRoles, void *userData)
 {
-/*	self.handle.write(b"\x12")
+	if(refTypeStrs.size() != refIds.size() | refTypeStrs.size() != refRoles.size())
+		throw std::invalid_argument("Length of ref vectors must be equal");
 
-	#Object ID
-	tmpStream = BytesIO()
-	deltaId = objectId - self.lastObjId
-	tmpStream.write(Encoding.EncodeZigzag(deltaId))
-	self.lastObjId = objectId
+	class O5mEncode *self = (class O5mEncode *)userData;
+	self->handle.write("\x12", 1);
 
-	#Store meta data
-	version, timestamp, changeset, uid, username = metaData
-	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
+	//Object ID
+	std::stringstream tmpStream;
+	int64_t deltaId = objId - self->lastObjId;
+	tmpStream << EncodeZigzag(deltaId);
+	self->lastObjId = objId;
 
-	#Store referenced children
-	refStream = BytesIO()
-	for typeStr, refId, role in refs:
-		typeCode = None
-		deltaRef = None
-		if typeStr == "node":
-			typeCode = 0
-			deltaRef = refId - self.lastRefNode
-			self.lastRefNode = refId
-		if typeStr == "way":
-			typeCode = 1
-			deltaRef = refId - self.lastRefWay
-			self.lastRefWay = refId
-		if typeStr == "relation":
-			typeCode = 2
-			deltaRef = refId - self.lastRefRelation
-			self.lastRefRelation = refId
+	//Store meta data
+	self->EncodeMetaData(metaData, tmpStream);
 
-		refStream.write(Encoding.EncodeZigzag(deltaRef))
+	//Store referenced children
+	std::stringstream refStream;
+	for(size_t i=0; i<refTypeStrs.size(); i++)
+	{
+		std::string &typeStr = refTypeStrs[i];
+		int64_t refId = refIds[i];
+		std::string &role = refRoles[i];
+		char typeCode[2] = "0";
+		int64_t deltaRef = 0;
+		if(typeStr == "node")
+		{
+			typeCode[0] = '0';
+			deltaRef = refId - self->lastRefNode;
+			self->lastRefNode = refId;
+		}
+		if(typeStr == "way")
+		{
+			typeCode[0] = '1';
+			deltaRef = refId - self->lastRefWay;
+			self->lastRefWay = refId;
+		}
+		if(typeStr == "relation")
+		{
+			typeCode[0] = '2';
+			deltaRef = refId - self->lastRefRelation;
+			self->lastRefRelation = refId;
+		}
 
-		typeCodeAndRole = (str(typeCode) + role).encode("utf-8")
-		try:
-			refIndex = self.stringPairs.index(typeCodeAndRole)
-			refStream.write(Encoding.EncodeVarint(len(self.stringPairs) - refIndex))
-		except ValueError:
-			refStream.write(b'\x00') #String start byte
-			refStream.write(self.EncodeSingleString(typeCodeAndRole))
-			if len(typeCodeAndRole) <= self.refTableLengthThreshold:
-				self.AddToRefTable(typeCodeAndRole)
+		refStream << EncodeZigzag(deltaRef);
 
-	encRefs = refStream.getvalue()
-	tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
-	tmpStream.write(encRefs)
+		std::string typeCodeAndRole(typeCode);
+		typeCodeAndRole.append(role);
 
-	#Write tags
-	for key in tags:
-		val = tags[key]
-		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
 
-	binData = tmpStream.getvalue()
-	self.handle.write(Encoding.EncodeVarint(len(binData)))
-	self.handle.write(binData)
-*/
+		bool indexFound = false;
+		size_t refIndex = self->FindStringPairsIndex(typeCodeAndRole, indexFound);
+		if(indexFound)
+		{
+			refStream << EncodeVarint(self->stringPairs.size() - refIndex);
+		}
+		else
+		{
+			refStream.write('\x00', 1); //String start byte
+			refStream << typeCodeAndRole;
+			refStream.write('\x00', 1); //String end byte
+			if(typeCodeAndRole.size() <= self->refTableLengthThreshold)
+				self->AddToRefTable(typeCodeAndRole);
+		}
+	}
+	
+	std::string encRefs = refStream.str();
+	tmpStream << EncodeVarint(encRefs.size());
+	tmpStream << encRefs;
+
+	//Write tags
+	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
+		self->WriteStringPair(it->first, it->second, tmpStream);
+
+	std::string binData = tmpStream.str();
+	self->handle << EncodeVarint(binData.size());
+	self->handle << binData;
+
 }
 
 void O5mEncode::Sync()
