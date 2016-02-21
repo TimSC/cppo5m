@@ -51,6 +51,7 @@ protected:
 	std::string combinedRawTmpBuff;
 	std::vector<int64_t> tmpRefsBuff;
 	TagMap tmpTagsBuff;
+	std::vector<std::string> tmpRefRolesBuff, tmpRefTypeStrBuff;
 
 	void DecodeBoundingBox();
 	void DecodeSingleString(std::istream &stream, std::string &out);

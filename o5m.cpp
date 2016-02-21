@@ -296,6 +296,7 @@ void O5mDecode::DecodeNode()
 	double lon = this->lastLon / 1e7;
 	double lat = this->lastLat / 1e7;
 
+	//Extract tags
 	std::string firstString, secondString;
 	this->tmpTagsBuff.clear();
 	while(!nodeDataStream.eof())
@@ -346,6 +347,7 @@ void O5mDecode::DecodeWay()
 		this->tmpRefsBuff.push_back(this->lastRefNode);
 	}
 
+	//Extract tags
 	std::string firstString, secondString;
 	this->tmpTagsBuff.clear();
 	while(!objDataStream.eof())
@@ -382,8 +384,9 @@ void O5mDecode::DecodeRelation()
 	objDataStream.read(&refData[0], refLen);
 	std::istringstream refDataStream(refData);
 
-	std::vector<int64_t> refIds;
-	std::vector<std::string> refRoles, refTypeStr;
+	this->tmpRefsBuff.clear();
+	this->tmpRefRolesBuff.clear();
+	this->tmpRefTypeStrBuff.clear();
 
 	while (!refDataStream.eof())
 	{
@@ -439,11 +442,12 @@ void O5mDecode::DecodeRelation()
 			break;
 		}
 
-		refIds.push_back(refId);
-		refRoles.push_back(role);
-		refTypeStr.push_back(typeStr);
+		this->tmpRefsBuff.push_back(refId);
+		this->tmpRefRolesBuff.push_back(role);
+		this->tmpRefTypeStrBuff.push_back(typeStr);
 	}
 
+	//Extract tags
 	std::string firstString, secondString;
 	this->tmpTagsBuff.clear();
 	while(!objDataStream.eof())
@@ -453,7 +457,8 @@ void O5mDecode::DecodeRelation()
 	}
 
 	if(this->funcStoreRelation != NULL)
-		this->funcStoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, refTypeStr, refIds, refRoles);
+		this->funcStoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
+			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
 
 }
 
