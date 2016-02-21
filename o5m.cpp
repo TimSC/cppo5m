@@ -729,9 +729,9 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 		}
 		else
 		{
-			refStream.write('\x00', 1); //String start byte
+			refStream.write("\x00", 1); //String start byte
 			refStream << typeCodeAndRole;
-			refStream.write('\x00', 1); //String end byte
+			refStream.write("\x00", 1); //String end byte
 			if(typeCodeAndRole.size() <= self->refTableLengthThreshold)
 				self->AddToRefTable(typeCodeAndRole);
 		}
