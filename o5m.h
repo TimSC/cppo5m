@@ -109,13 +109,13 @@ public:
 	void Reset();
 	void Finish();
 
-	static void FuncStoreIsDiff(bool, void *userData);
-	static void FuncStoreBounds(double x1, double y1, double x2, double y2, void *userData);
-	static void FuncStoreNode(int64_t objId, const class MetaData &metaData, 
+	static void StoreIsDiff(bool, void *userData);
+	static void StoreBounds(double x1, double y1, double x2, double y2, void *userData);
+	static void StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon, void *userData);
-	static void FuncStoreWay(int64_t objId, const class MetaData &metaDta, 
+	static void StoreWay(int64_t objId, const class MetaData &metaDta, 
 		const TagMap &tags, std::vector<int64_t> &refs, void *userData);
-	static void FuncStoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+	static void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
 		std::vector<std::string> refRoles, void *userData);
 

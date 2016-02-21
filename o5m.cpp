@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <stdlib.h>
+#include <cmath>
 #include "varint.h"
 #include "o5m.h"
 
@@ -492,32 +493,39 @@ void O5mEncode::ResetDeltaCoding()
 	this->lastRefRelation = 0;
 }
 
-/*
-def StoreIsDiff(self, isDiff):
-	self.handle.write(b"\xe0")
-	if isDiff:
-		headerData = "o5c2".encode("utf-8")
-	else:
-		headerData = "o5m2".encode("utf-8")
-	self.handle.write(Encoding.EncodeVarint(len(headerData)))
-	self.handle.write(headerData)
+void O5mEncode::StoreIsDiff(bool isDiff, void *userData)
+{
+	class O5mEncode *self = (class O5mEncode *)userData;
+	self->handle.write("\xe0", 1);
+	std::string headerData;
+	if(isDiff)
+		headerData = "o5c2";
+	else
+		headerData = "o5m2";
+	std::string len = EncodeVarint(headerData.size());
+	self->handle.write(len.c_str(), len.size());
+	self->handle.write(headerData.c_str(), headerData.size());
+}
 
-def StoreBounds(self, bbox):
+void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2, void *userData)
+{
+	//south-western corner 
+	std::string bboxData;
+	bboxData.append(EncodeZigzag(round(x1 * 1e7))); //lon
+	bboxData.append(EncodeZigzag(round(y1 * 1e7))); //lat
 
-	#south-western corner 
-	bboxData = []
-	bboxData.append(Encoding.EncodeZigzag(round(bbox[0] * 1e7))) #lon
-	bboxData.append(Encoding.EncodeZigzag(round(bbox[1] * 1e7))) #lat
-
-	#north-eastern corner
-	bboxData.append(Encoding.EncodeZigzag(round(bbox[2] * 1e7))) #lon
-	bboxData.append(Encoding.EncodeZigzag(round(bbox[3] * 1e7))) #lat
+	//north-eastern corner
+	bboxData.append(EncodeZigzag(round(x2 * 1e7))); //lon
+	bboxData.append(EncodeZigzag(round(y2 * 1e7))); //lat
 	
-	combinedData = b''.join(bboxData)
-	self.handle.write(b'\xdb')
-	self.handle.write(Encoding.EncodeVarint(len(combinedData)))
-	self.handle.write(combinedData)
+	class O5mEncode *self = (class O5mEncode *)userData;
+	self->handle.write("\xdb", 1);
+	std::string len = EncodeVarint(bboxData.size());
+	self->handle.write(len.c_str(), len.size());
+	self->handle.write(bboxData.c_str(), bboxData.size());
+}
 
+/*
 def EncodeMetaData(self, version, timestamp, changeset, uid, username, outStream):
 	#Decode author and time stamp
 	if version != 0 and version != None:
