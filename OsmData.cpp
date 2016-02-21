@@ -94,12 +94,7 @@ OsmData::~OsmData()
 void OsmData::LoadFromO5m(std::istream &fi)
 {
 	class O5mDecode dec(fi);
-	dec.funcStoreNode = this->FuncStoreNode;
-	dec.funcStoreWay = this->FuncStoreWay;
-	dec.funcStoreRelation = this->FuncStoreRelation;
-	dec.funcStoreBounds = this->FuncStoreBounds;
-	dec.funcStoreIsDiff = this->FuncStoreIsDiff;
-	dec.userData = this;
+	dec.output = this;
 	dec.DecodeHeader();
 
 	while (!fi.eof())
@@ -109,23 +104,23 @@ void OsmData::LoadFromO5m(std::istream &fi)
 void OsmData::SaveToO5m(std::ostream &fi)
 {
 	class O5mEncode enc(fi);
-	enc.StoreIsDiff(this->isDiff, &enc);
+	enc.StoreIsDiff(this->isDiff);
 	for(size_t i=0;i< this->bounds.size(); i++) {
 		std::vector<double> &bbox = this->bounds[i];
-		enc.StoreBounds(bbox[0], bbox[1], bbox[2], bbox[3], &enc);
+		enc.StoreBounds(bbox[0], bbox[1], bbox[2], bbox[3]);
 	}
 	for(size_t i=0; i < this->nodes.size(); i++)
 	{
 		class OsmNode &node = this->nodes[i];
 		enc.StoreNode(node.objId, node.metaData, 
-			node.tags, node.lat, node.lon, &enc);
+			node.tags, node.lat, node.lon);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->ways.size(); i++)
 	{
 		class OsmWay &way = this->ways[i];
 		enc.StoreWay(way.objId, way.metaData, 
-			way.tags, way.refs, &enc);
+			way.tags, way.refs);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->relations.size(); i++)
@@ -133,18 +128,17 @@ void OsmData::SaveToO5m(std::ostream &fi)
 		class OsmRelation &relation = this->relations[i];
 		enc.StoreRelation(relation.objId, relation.metaData, relation.tags, 
 			relation.refTypeStrs, relation.refIds, 
-			relation.refRoles, &enc);
+			relation.refRoles);
 	}
 	enc.Finish();
 }
 
-void OsmData::FuncStoreIsDiff(bool d, void *userData)
+void OsmData::StoreIsDiff(bool d)
 {
-	class OsmData *self = (class OsmData *)userData;
-	self->isDiff = d;
+	this->isDiff = d;
 }
 
-void OsmData::FuncStoreBounds(double x1, double y1, double x2, double y2, void *userData)
+void OsmData::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	std::vector<double> b;
 	b.resize(4);
@@ -152,12 +146,11 @@ void OsmData::FuncStoreBounds(double x1, double y1, double x2, double y2, void *
 	b[1] = y1;
 	b[2] = x2;
 	b[3] = y2;
-	class OsmData *self = (class OsmData *)userData;
-	self->bounds.push_back(b);
+	this->bounds.push_back(b);
 }
 
-void OsmData::FuncStoreNode(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, double lat, double lon, void *userData)
+void OsmData::StoreNode(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, double lat, double lon)
 {
 	class OsmNode osmNode;
 	osmNode.objId = objId;
@@ -166,12 +159,11 @@ void OsmData::FuncStoreNode(int64_t objId, const class MetaData &metaData,
 	osmNode.lat = lat;
 	osmNode.lon = lon;
 
-	class OsmData *self = (class OsmData *)userData;
-	self->nodes.push_back(osmNode);
+	this->nodes.push_back(osmNode);
 }
 
-void OsmData::FuncStoreWay(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, std::vector<int64_t> &refs, void *userData)
+void OsmData::StoreWay(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, std::vector<int64_t> &refs)
 {
 	class OsmWay osmWay;
 	osmWay.objId = objId;
@@ -179,14 +171,13 @@ void OsmData::FuncStoreWay(int64_t objId, const class MetaData &metaData,
 	osmWay.tags = tags; 
 	osmWay.refs = refs;
 
-	class OsmData *self = (class OsmData *)userData;
-	self->ways.push_back(osmWay);
+	this->ways.push_back(osmWay);
 
 }
 
-void OsmData::FuncStoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+void OsmData::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 	std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-	std::vector<std::string> refRoles, void *userData)
+	std::vector<std::string> refRoles)
 {
 	class OsmRelation osmRelation;
 	osmRelation.objId = objId;
@@ -196,8 +187,7 @@ void OsmData::FuncStoreRelation(int64_t objId, const MetaData &metaData, const T
 	osmRelation.refIds = refIds;
 	osmRelation.refRoles = refRoles;
 
-	class OsmData *self = (class OsmData *)userData;
-	self->relations.push_back(osmRelation);
+	this->relations.push_back(osmRelation);
 
 }
 

@@ -66,14 +66,9 @@ MetaData& MetaData::operator=(const MetaData &a)
 // ****** o5m decoder ******
 
 O5mDecode::O5mDecode(std::istream &handleIn) : handle(handleIn),
-	funcStoreNode(NULL),
-	funcStoreWay(NULL),
-	funcStoreRelation(NULL),
-	funcStoreBounds(NULL),
-	funcStoreIsDiff(NULL),
+	output(NULL),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000),
-	userData(NULL)
+	refTableMaxSize(15000)
 {
 	char tmp = handle.get();
 	if(handle.fail())
@@ -157,8 +152,8 @@ void O5mDecode::DecodeHeader()
 	std::string fileType;
 	fileType.resize(length);
 	this->handle.read(&fileType[0], length);
-	if(this->funcStoreIsDiff != NULL)
-		this->funcStoreIsDiff("o5c2"==fileType, this->userData);
+	if(this->output != NULL)
+		this->output->StoreIsDiff("o5c2"==fileType);
 }
 
 void O5mDecode::DecodeBoundingBox()
@@ -173,8 +168,8 @@ void O5mDecode::DecodeBoundingBox()
 	double x2 = DecodeZigzag(this->handle) / 1e7; //lon
 	double y2 = DecodeZigzag(this->handle) / 1e7; //lat
 
-	if(this->funcStoreBounds != NULL)
-		this->funcStoreBounds(x1, y1, x2, y2, this->userData);
+	if(this->output != NULL)
+		this->output->StoreBounds(x1, y1, x2, y2);
 }
 
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
@@ -307,8 +302,8 @@ void O5mDecode::DecodeNode()
 		if(ok) this->tmpTagsBuff[firstString] = secondString;
 	}
 
-	if(this->funcStoreNode != NULL)
-		this->funcStoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon, this->userData);
+	if(this->output != NULL)
+		this->output->StoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
 }
 
 void O5mDecode::DecodeWay()
@@ -358,8 +353,8 @@ void O5mDecode::DecodeWay()
 		if(ok) this->tmpTagsBuff[firstString] = secondString;
 	}
 
-	if (this->funcStoreWay != NULL)
-		this->funcStoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff, this->userData);
+	if (this->output != NULL)
+		this->output->StoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
 }
 
 void O5mDecode::DecodeRelation()
@@ -458,9 +453,9 @@ void O5mDecode::DecodeRelation()
 		if(ok) this->tmpTagsBuff[firstString] = secondString;
 	}
 
-	if(this->funcStoreRelation != NULL)
-		this->funcStoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
-			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff, this->userData);
+	if(this->output != NULL)
+		this->output->StoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
+			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
 
 }
 
@@ -493,21 +488,20 @@ void O5mEncode::ResetDeltaCoding()
 	this->lastRefRelation = 0;
 }
 
-void O5mEncode::StoreIsDiff(bool isDiff, void *userData)
+void O5mEncode::StoreIsDiff(bool isDiff)
 {
-	class O5mEncode *self = (class O5mEncode *)userData;
-	self->handle.write("\xe0", 1);
+	this->handle.write("\xe0", 1);
 	std::string headerData;
 	if(isDiff)
 		headerData = "o5c2";
 	else
 		headerData = "o5m2";
 	std::string len = EncodeVarint(headerData.size());
-	self->handle << len;
-	self->handle << headerData;
+	this->handle << len;
+	this->handle << headerData;
 }
 
-void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2, void *userData)
+void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	//south-western corner 
 	std::string bboxData;
@@ -518,11 +512,10 @@ void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2, void *us
 	bboxData.append(EncodeZigzag(round(x2 * 1e7))); //lon
 	bboxData.append(EncodeZigzag(round(y2 * 1e7))); //lat
 	
-	class O5mEncode *self = (class O5mEncode *)userData;
-	self->handle.write("\xdb", 1);
+	this->handle.write("\xdb", 1);
 	std::string len = EncodeVarint(bboxData.size());
-	self->handle << len;
-	self->handle << bboxData;
+	this->handle << len;
+	this->handle << bboxData;
 }
 
 void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
@@ -598,61 +591,59 @@ void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 }
 
 void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double latIn, double lonIn, void *userData)
+		const TagMap &tags, double latIn, double lonIn)
 {
-	class O5mEncode *self = (class O5mEncode *)userData;
-	self->handle.write("\x10",1);
+	this->handle.write("\x10",1);
 
 	//Object ID
 	std::stringstream tmpStream;
-	int64_t deltaId = objId - self->lastObjId;
+	int64_t deltaId = objId - this->lastObjId;
 	tmpStream << EncodeZigzag(deltaId);
-	self->lastObjId = objId;
+	this->lastObjId = objId;
 
-	self->EncodeMetaData(metaData, tmpStream);
+	this->EncodeMetaData(metaData, tmpStream);
 
 	//Position
 	int64_t lon = round(lonIn * 1e7);
-	int64_t deltaLon = lon - self->lastLon;
+	int64_t deltaLon = lon - this->lastLon;
 	tmpStream << EncodeZigzag(deltaLon);
-	self->lastLon = lon;
+	this->lastLon = lon;
 	int64_t lat = round(latIn * 1e7);
-	int64_t deltaLat = lat - self->lastLat;
+	int64_t deltaLat = lat - this->lastLat;
 	tmpStream << EncodeZigzag(deltaLat);
-	self->lastLat = lat;
+	this->lastLat = lat;
 
 	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		self->WriteStringPair(it->first, it->second, tmpStream);
+		this->WriteStringPair(it->first, it->second, tmpStream);
 
 	std::string binData = tmpStream.str();
 	std::string len = EncodeVarint(binData.size());
-	self->handle << len;
-	self->handle << binData;
+	this->handle << len;
+	this->handle << binData;
 }
 
 void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, std::vector<int64_t> &refs, void *userData)
+		const TagMap &tags, std::vector<int64_t> &refs)
 {
-	class O5mEncode *self = (class O5mEncode *)userData;
-	self->handle.write("\x11", 1);
+	this->handle.write("\x11", 1);
 
 	//Object ID
 	std::stringstream tmpStream;
-	int64_t deltaId = objId - self->lastObjId;
+	int64_t deltaId = objId - this->lastObjId;
 	tmpStream << EncodeZigzag(deltaId);
-	self->lastObjId = objId;
+	this->lastObjId = objId;
 
 	//Store meta data
-	self->EncodeMetaData(metaData, tmpStream);
+	this->EncodeMetaData(metaData, tmpStream);
 
 	//Store nodes
 	std::stringstream refStream;
 	for(size_t i=0; i< refs.size(); i++)
 	{
 		int64_t ref = refs[i]; 
-		int64_t deltaRef = ref - self->lastRefNode;
+		int64_t deltaRef = ref - this->lastRefNode;
 		refStream << EncodeZigzag(deltaRef);
-		self->lastRefNode = ref;
+		this->lastRefNode = ref;
 	}
 
 	std::string encRefs = refStream.str();
@@ -661,31 +652,30 @@ void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData,
 
 	//Write tags
 	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		self->WriteStringPair(it->first, it->second, tmpStream);
+		this->WriteStringPair(it->first, it->second, tmpStream);
 
 	std::string binData = tmpStream.str();
-	self->handle << EncodeVarint(binData.size());
-	self->handle << binData;
+	this->handle << EncodeVarint(binData.size());
+	this->handle << binData;
 }
 	
 void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles, void *userData)
+		std::vector<std::string> refRoles)
 {
 	if(refTypeStrs.size() != refIds.size() | refTypeStrs.size() != refRoles.size())
 		throw std::invalid_argument("Length of ref vectors must be equal");
 
-	class O5mEncode *self = (class O5mEncode *)userData;
-	self->handle.write("\x12", 1);
+	this->handle.write("\x12", 1);
 
 	//Object ID
 	std::stringstream tmpStream;
-	int64_t deltaId = objId - self->lastObjId;
+	int64_t deltaId = objId - this->lastObjId;
 	tmpStream << EncodeZigzag(deltaId);
-	self->lastObjId = objId;
+	this->lastObjId = objId;
 
 	//Store meta data
-	self->EncodeMetaData(metaData, tmpStream);
+	this->EncodeMetaData(metaData, tmpStream);
 
 	//Store referenced children
 	std::stringstream refStream;
@@ -699,20 +689,20 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 		if(typeStr == "node")
 		{
 			typeCode[0] = '0';
-			deltaRef = refId - self->lastRefNode;
-			self->lastRefNode = refId;
+			deltaRef = refId - this->lastRefNode;
+			this->lastRefNode = refId;
 		}
 		if(typeStr == "way")
 		{
 			typeCode[0] = '1';
-			deltaRef = refId - self->lastRefWay;
-			self->lastRefWay = refId;
+			deltaRef = refId - this->lastRefWay;
+			this->lastRefWay = refId;
 		}
 		if(typeStr == "relation")
 		{
 			typeCode[0] = '2';
-			deltaRef = refId - self->lastRefRelation;
-			self->lastRefRelation = refId;
+			deltaRef = refId - this->lastRefRelation;
+			this->lastRefRelation = refId;
 		}
 
 		refStream << EncodeZigzag(deltaRef);
@@ -722,18 +712,18 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 
 
 		bool indexFound = false;
-		size_t refIndex = self->FindStringPairsIndex(typeCodeAndRole, indexFound);
+		size_t refIndex = this->FindStringPairsIndex(typeCodeAndRole, indexFound);
 		if(indexFound)
 		{
-			refStream << EncodeVarint(self->stringPairs.size() - refIndex);
+			refStream << EncodeVarint(this->stringPairs.size() - refIndex);
 		}
 		else
 		{
 			refStream.write("\x00", 1); //String start byte
 			refStream << typeCodeAndRole;
 			refStream.write("\x00", 1); //String end byte
-			if(typeCodeAndRole.size() <= self->refTableLengthThreshold)
-				self->AddToRefTable(typeCodeAndRole);
+			if(typeCodeAndRole.size() <= this->refTableLengthThreshold)
+				this->AddToRefTable(typeCodeAndRole);
 		}
 	}
 	
@@ -743,11 +733,11 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 
 	//Write tags
 	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		self->WriteStringPair(it->first, it->second, tmpStream);
+		this->WriteStringPair(it->first, it->second, tmpStream);
 
 	std::string binData = tmpStream.str();
-	self->handle << EncodeVarint(binData.size());
-	self->handle << binData;
+	this->handle << EncodeVarint(binData.size());
+	this->handle << binData;
 
 }
 

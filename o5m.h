@@ -71,17 +71,24 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 
-	void (*funcStoreNode)(int64_t, const class MetaData &, const TagMap &, double, double, void *);
-	void (*funcStoreWay)(int64_t, const class MetaData &, const TagMap &, std::vector<int64_t> &, void *);
-	void (*funcStoreRelation)(int64_t, const MetaData &, const TagMap &, 
-		std::vector<std::string>, std::vector<int64_t>, 
-		std::vector<std::string>, void *);
-	void (*funcStoreBounds)(double, double, double, double, void *);
-	void (*funcStoreIsDiff)(bool, void *);
-	void *userData;
+	class IDataStreamHandler *output;
 };
 
-class O5mEncode
+class IDataStreamHandler
+{
+public:
+	virtual void StoreIsDiff(bool) {};
+	virtual void StoreBounds(double x1, double y1, double x2, double y2) {};
+	virtual void StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon) {};
+	virtual void StoreWay(int64_t objId, const class MetaData &metaDta, 
+		const TagMap &tags, std::vector<int64_t> &refs) {};
+	virtual void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
+		std::vector<std::string> refRoles) {};
+};
+
+class O5mEncode : public IDataStreamHandler
 {
 protected:
 	std::ostream &handle;
@@ -115,15 +122,15 @@ public:
 	void Reset();
 	void Finish();
 
-	static void StoreIsDiff(bool, void *userData);
-	static void StoreBounds(double x1, double y1, double x2, double y2, void *userData);
-	static void StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double lat, double lon, void *userData);
-	static void StoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs, void *userData);
-	static void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+	void StoreIsDiff(bool);
+	void StoreBounds(double x1, double y1, double x2, double y2);
+	void StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon);
+	void StoreWay(int64_t objId, const class MetaData &metaDta, 
+		const TagMap &tags, std::vector<int64_t> &refs);
+	void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles, void *userData);
+		std::vector<std::string> refRoles);
 
 };
 

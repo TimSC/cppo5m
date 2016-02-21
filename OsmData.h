@@ -50,7 +50,7 @@ public:
 	OsmRelation& operator=(const OsmRelation &arg);
 };
 
-class OsmData
+class OsmData : public IDataStreamHandler
 {
 public:
 	std::vector<class OsmNode> nodes;
@@ -64,15 +64,15 @@ public:
 	void LoadFromO5m(std::istream &fi);
 	void SaveToO5m(std::ostream &fi);
 
-	static void FuncStoreIsDiff(bool, void *userData);
-	static void FuncStoreBounds(double x1, double y1, double x2, double y2, void *userData);
-	static void FuncStoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double lat, double lon, void *userData);
-	static void FuncStoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs, void *userData);
-	static void FuncStoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+	void StoreIsDiff(bool);
+	void StoreBounds(double x1, double y1, double x2, double y2);
+	void StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon);
+	void StoreWay(int64_t objId, const class MetaData &metaDta, 
+		const TagMap &tags, std::vector<int64_t> &refs);
+	void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles, void *userData);
+		std::vector<std::string> refRoles);
 };
 
 #endif //_OSMDATA_H
