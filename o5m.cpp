@@ -621,9 +621,7 @@ void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData,
 	self->lastLat = lat;
 
 	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-	{
 		self->WriteStringPair(it->first, it->second, tmpStream);
-	}
 
 	std::string binData = tmpStream.str();
 	std::string len = EncodeVarint(binData.size());
@@ -631,45 +629,49 @@ void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData,
 	self->handle << binData;
 }
 
-/*
-def O5mEncode::StoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs, void *userData):
-	self.handle.write(b"\x11")
+void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, std::vector<int64_t> &refs, void *userData)
+{
+	class O5mEncode *self = (class O5mEncode *)userData;
+	self->handle.write("\x11", 1);
 
-	#Object ID
-	tmpStream = BytesIO()
-	deltaId = objectId - self.lastObjId
-	tmpStream.write(Encoding.EncodeZigzag(deltaId))
-	self.lastObjId = objectId
+	//Object ID
+	std::stringstream tmpStream;
+	int64_t deltaId = objId - self->lastObjId;
+	tmpStream << EncodeZigzag(deltaId);
+	self->lastObjId = objId;
 
-	#Store meta data
-	version, timestamp, changeset, uid, username = metaData
-	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
+	//Store meta data
+	self->EncodeMetaData(metaData, tmpStream);
 
-	#Store nodes
-	refStream = BytesIO()
-	for ref in refs:
-		deltaRef = ref - self.lastRefNode
-		refStream.write(Encoding.EncodeZigzag(deltaRef))
-		self.lastRefNode = ref
+	//Store nodes
+	std::stringstream refStream;
+	for(size_t i=0; i< refs.size(); i++)
+	{
+		int64_t ref = refs[i]; 
+		int64_t deltaRef = ref - self->lastRefNode;
+		refStream << EncodeZigzag(deltaRef);
+		self->lastRefNode = ref;
+	}
 
-	encRefs = refStream.getvalue()
-	tmpStream.write(Encoding.EncodeVarint(len(encRefs)))
-	tmpStream.write(encRefs)
+	std::string encRefs = refStream.str();
+	tmpStream << EncodeVarint(encRefs.size());
+	tmpStream << encRefs;
 
-	#Write tags
-	for key in tags:
-		val = tags[key]
-		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
+	//Write tags
+	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
+		self->WriteStringPair(it->first, it->second, tmpStream);
 
-	binData = tmpStream.getvalue()
-	self.handle.write(Encoding.EncodeVarint(len(binData)))
-	self.handle.write(binData)
+	std::string binData = tmpStream.str();
+	self->handle << EncodeVarint(binData.size());
+	self->handle << binData;
+}
 	
-def O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
 		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles, void *userData):
-	self.handle.write(b"\x12")
+		std::vector<std::string> refRoles, void *userData)
+{
+/*	self.handle.write(b"\x12")
 
 	#Object ID
 	tmpStream = BytesIO()
@@ -724,6 +726,8 @@ def O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagM
 	self.handle.write(Encoding.EncodeVarint(len(binData)))
 	self.handle.write(binData)
 */
+}
+
 void O5mEncode::Sync()
 {
 	this->handle.write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);

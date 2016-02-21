@@ -114,14 +114,27 @@ void OsmData::SaveToO5m(std::ostream &fi)
 		std::vector<double> &bbox = this->bounds[i];
 		enc.StoreBounds(bbox[0], bbox[1], bbox[2], bbox[3], &enc);
 	}
-/*	for nodeData in self.nodes:
-		enc.StoreNode(*nodeData)
-	enc.Reset()
-	for wayData in self.ways:
-		enc.StoreWay(*wayData)
-	enc.Reset()
-	for relationData in self.relations:
-		enc.StoreRelation(*relationData)*/
+	for(size_t i=0; i < this->nodes.size(); i++)
+	{
+		class OsmNode &node = this->nodes[i];
+		enc.StoreNode(node.objId, node.metaData, 
+			node.tags, node.lat, node.lon, &enc);
+	}
+	enc.Reset();
+	for(size_t i=0; i < this->ways.size(); i++)
+	{
+		class OsmWay &way = this->ways[i];
+		enc.StoreWay(way.objId, way.metaData, 
+			way.tags, way.refs, &enc);
+	}
+	enc.Reset();
+	for(size_t i=0; i < this->relations.size(); i++)
+	{
+		class OsmRelation &relation = this->relations[i];
+		enc.StoreRelation(relation.objId, relation.metaData, relation.tags, 
+			relation.refTypeStrs, relation.refIds, 
+			relation.refRoles, &enc);
+	}
 	enc.Finish();
 }
 
