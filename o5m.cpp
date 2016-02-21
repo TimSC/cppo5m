@@ -503,8 +503,8 @@ void O5mEncode::StoreIsDiff(bool isDiff, void *userData)
 	else
 		headerData = "o5m2";
 	std::string len = EncodeVarint(headerData.size());
-	self->handle.write(len.c_str(), len.size());
-	self->handle.write(headerData.c_str(), headerData.size());
+	self->handle << len;
+	self->handle << headerData;
 }
 
 void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2, void *userData)
@@ -521,94 +521,119 @@ void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2, void *us
 	class O5mEncode *self = (class O5mEncode *)userData;
 	self->handle.write("\xdb", 1);
 	std::string len = EncodeVarint(bboxData.size());
-	self->handle.write(len.c_str(), len.size());
-	self->handle.write(bboxData.c_str(), bboxData.size());
+	self->handle << len;
+	self->handle << bboxData;
+}
+
+void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
+{
+	//Decode author and time stamp
+	if(metaData.version != 0)
+	{
+		std::string verStr = EncodeVarint(metaData.version);
+		outStream << verStr;
+		int64_t deltaTime = metaData.timestamp - this->lastTimeStamp;
+		outStream << EncodeZigzag(deltaTime);
+		this->lastTimeStamp = metaData.timestamp;
+		//print "timestamp", self.lastTimeStamp, deltaTime
+		if(metaData.timestamp != 0)
+		{
+			//print changeset
+			int64_t deltaChangeSet = metaData.changeset - this->lastChangeSet;
+			outStream << EncodeZigzag(deltaChangeSet);
+			this->lastChangeSet = metaData.changeset;
+			std::string encUid = EncodeVarint(metaData.uid);
+			this->WriteStringPair(encUid, metaData.username, outStream);
+		}
+	}
+	else
+	{
+		outStream << EncodeVarint(0);
+	}
+}
+
+/*void O5mEncode::EncodeSingleString(std::string &strIn)
+{
+	return strIn + b'\x00'
+}*/
+
+void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
+	std::ostream &tmpStream)
+{
+	std::string encodedStrings = firstString;
+	encodedStrings.append("\x00",1);
+	encodedStrings.append(secondString);
+	encodedStrings.append("\x00",1);
+	if(firstString.size() + secondString.size() <= this->refTableLengthThreshold)
+	{
+		size_t existIndex = 0;
+		bool indexFound = false;
+		for(size_t i=0; i< this->stringPairs.size(); i++)
+		{
+			if(this->stringPairs[i] != encodedStrings) continue;
+			existIndex = i;
+			indexFound = true;
+			break;
+		}
+		if(indexFound) {
+			tmpStream << EncodeVarint(this->stringPairs.size() - existIndex);
+			return;
+		}
+	}
+
+	tmpStream.write("\x00", 1);
+	tmpStream << encodedStrings;
+	if(firstString.size() + secondString.size() <= this->refTableLengthThreshold)
+		this->AddToRefTable(encodedStrings);
+}
+
+void O5mEncode::AddToRefTable(const std::string &encodedStrings)
+{
+	this->stringPairs.push_back(encodedStrings);
+
+	//Limit size of reference table
+	if(this->stringPairs.size() > this->refTableMaxSize)
+		this->stringPairs.pop_front();
+}
+
+void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double latIn, double lonIn, void *userData)
+{
+	class O5mEncode *self = (class O5mEncode *)userData;
+	self->handle.write("\x10",1);
+
+	//Object ID
+	std::stringstream tmpStream;
+	int64_t deltaId = objId - self->lastObjId;
+	tmpStream << EncodeZigzag(deltaId);
+	self->lastObjId = objId;
+
+	self->EncodeMetaData(metaData, tmpStream);
+
+	//Position
+	int64_t lon = round(lonIn * 1e7);
+	int64_t deltaLon = lon - self->lastLon;
+	tmpStream << EncodeZigzag(deltaLon);
+	self->lastLon = lon;
+	int64_t lat = round(latIn * 1e7);
+	int64_t deltaLat = lat - self->lastLat;
+	tmpStream << EncodeZigzag(deltaLat);
+	self->lastLat = lat;
+
+	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
+	{
+		self->WriteStringPair(it->first, it->second, tmpStream);
+	}
+
+	std::string binData = tmpStream.str();
+	std::string len = EncodeVarint(binData.size());
+	self->handle << len;
+	self->handle << binData;
 }
 
 /*
-def EncodeMetaData(self, version, timestamp, changeset, uid, username, outStream):
-	#Decode author and time stamp
-	if version != 0 and version != None:
-		outStream.write(Encoding.EncodeVarint(version))
-		if timestamp != None:
-			timestamp = calendar.timegm(timestamp.utctimetuple())
-		else:
-			timestamp = 0
-		deltaTime = timestamp - self.lastTimeStamp
-		outStream.write(Encoding.EncodeZigzag(deltaTime))
-		self.lastTimeStamp = timestamp
-		#print "timestamp", self.lastTimeStamp, deltaTime
-		if timestamp != 0:
-			#print changeset
-			deltaChangeSet = changeset - self.lastChangeSet
-			outStream.write(Encoding.EncodeZigzag(deltaChangeSet))
-			self.lastChangeSet = changeset
-			encUid = b""
-			if uid is not None:
-				encUid = Encoding.EncodeVarint(uid)
-			encUsername = b""
-			if username is not None:
-				encUsername = username.encode("utf-8")
-			self.WriteStringPair(encUid, encUsername, outStream)
-	else:
-		outStream.write(Encoding.EncodeVarint(0))
-
-def EncodeSingleString(self, strIn):
-	return strIn + b'\x00'
-
-def WriteStringPair(self, firstString, secondString, tmpStream):
-	encodedStrings = firstString + b"\x00" + secondString + b"\x00"
-	if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
-		try:
-			existIndex = self.stringPairs.index(encodedStrings)
-			tmpStream.write(Encoding.EncodeVarint(len(self.stringPairs) - existIndex))
-			return
-		except ValueError:
-			pass #Key value pair not currently in reference table
-
-	tmpStream.write(b"\x00")
-	tmpStream.write(encodedStrings)
-	if len(firstString) + len(secondString) <= self.refTableLengthThreshold:
-		self.AddToRefTable(encodedStrings)
-
-def AddToRefTable(self, encodedStrings):
-	self.stringPairs.append(encodedStrings)
-
-	#Limit size of reference table
-	if len(self.stringPairs) > self.refTableMaxSize:
-		self.stringPairs = self.stringPairs[-self.refTableMaxSize:]
-
-def StoreNode(self, objectId, metaData, tags, pos):
-	self.handle.write(b"\x10")
-
-	#Object ID
-	tmpStream = BytesIO()
-	deltaId = objectId - self.lastObjId
-	tmpStream.write(Encoding.EncodeZigzag(deltaId))
-	self.lastObjId = objectId
-
-	version, timestamp, changeset, uid, username = metaData
-	self.EncodeMetaData(version, timestamp, changeset, uid, username, tmpStream)
-
-	#Position
-	lon = round(pos[1] * 1e7)
-	deltaLon = lon - self.lastLon
-	tmpStream.write(Encoding.EncodeZigzag(deltaLon))
-	self.lastLon = lon
-	lat = round(pos[0] * 1e7)
-	deltaLat = lat - self.lastLat
-	tmpStream.write(Encoding.EncodeZigzag(deltaLat))
-	self.lastLat = lat
-
-	for key in tags:
-		val = tags[key]
-		self.WriteStringPair(key.encode("utf-8"), val.encode("utf-8"), tmpStream)
-
-	binData = tmpStream.getvalue()
-	self.handle.write(Encoding.EncodeVarint(len(binData)))
-	self.handle.write(binData)
-
-def StoreWay(self, objectId, metaData, tags, refs):
+def O5mEncode::StoreWay(int64_t objId, const class MetaData &metaDta, 
+		const TagMap &tags, std::vector<int64_t> &refs, void *userData):
 	self.handle.write(b"\x11")
 
 	#Object ID
@@ -641,7 +666,9 @@ def StoreWay(self, objectId, metaData, tags, refs):
 	self.handle.write(Encoding.EncodeVarint(len(binData)))
 	self.handle.write(binData)
 	
-def StoreRelation(self, objectId, metaData, tags, refs):
+def O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
+		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
+		std::vector<std::string> refRoles, void *userData):
 	self.handle.write(b"\x12")
 
 	#Object ID

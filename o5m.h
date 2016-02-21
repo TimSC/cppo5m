@@ -99,6 +99,11 @@ protected:
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
 
+	void EncodeMetaData(const class MetaData &metaData, std::ostream &outStream);
+	void WriteStringPair(const std::string &firstString, const std::string &secondString, 
+			std::ostream &tmpStream);
+	void AddToRefTable(const std::string &encodedStrings);
+
 public:
 	O5mEncode(std::ostream &handle);
 	virtual ~O5mEncode();

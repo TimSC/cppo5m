@@ -109,10 +109,12 @@ void OsmData::LoadFromO5m(std::istream &fi)
 void OsmData::SaveToO5m(std::ostream &fi)
 {
 	class O5mEncode enc(fi);
-/*	enc.StoreIsDiff(this->isDiff)
-	foreach(bbox in this->bounds:
-		enc.StoreBounds(bbox)
-	for nodeData in self.nodes:
+	enc.StoreIsDiff(this->isDiff, &enc);
+	for(size_t i=0;i< this->bounds.size(); i++) {
+		std::vector<double> &bbox = this->bounds[i];
+		enc.StoreBounds(bbox[0], bbox[1], bbox[2], bbox[3], &enc);
+	}
+/*	for nodeData in self.nodes:
 		enc.StoreNode(*nodeData)
 	enc.Reset()
 	for wayData in self.ways:
