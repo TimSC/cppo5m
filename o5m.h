@@ -71,11 +71,14 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 
-	void (*funcStoreNode)(int64_t, const class MetaData &, const TagMap &, double, double);
-	void (*funcStoreWay)(int64_t, const class MetaData &, const TagMap &, std::vector<int64_t> &);
-	void (*funcStoreRelation)(int64_t, const MetaData &, const TagMap &, std::vector<std::string>, std::vector<int64_t>, std::vector<std::string>);
-	void (*funcStoreBounds)(double, double, double, double);
-	void (*funcStoreIsDiff)(bool);
+	void (*funcStoreNode)(int64_t, const class MetaData &, const TagMap &, double, double, void *);
+	void (*funcStoreWay)(int64_t, const class MetaData &, const TagMap &, std::vector<int64_t> &, void *);
+	void (*funcStoreRelation)(int64_t, const MetaData &, const TagMap &, 
+		std::vector<std::string>, std::vector<int64_t>, 
+		std::vector<std::string>, void *);
+	void (*funcStoreBounds)(double, double, double, double, void *);
+	void (*funcStoreIsDiff)(bool, void *);
+	void *userData;
 };
 
 #endif //_O5M_H

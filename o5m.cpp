@@ -71,7 +71,8 @@ O5mDecode::O5mDecode(std::istream &handleIn) : handle(handleIn),
 	funcStoreBounds(NULL),
 	funcStoreIsDiff(NULL),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000)
+	refTableMaxSize(15000),
+	userData(NULL)
 {
 	char tmp = handle.get();
 	if(handle.fail())
@@ -111,7 +112,7 @@ void O5mDecode::ResetDeltaCoding()
 bool O5mDecode::DecodeNext()
 {
 	unsigned char code = this->handle.get();
-	std::cout << "found " << (unsigned int)code << std::endl;
+	//std::cout << "found " << (unsigned int)code << std::endl;
 	switch(code)
 	{
 	case 0x10:
@@ -156,7 +157,7 @@ void O5mDecode::DecodeHeader()
 	fileType.resize(length);
 	this->handle.read(&fileType[0], length);
 	if(this->funcStoreIsDiff != NULL)
-		this->funcStoreIsDiff("o5c2"==fileType);
+		this->funcStoreIsDiff("o5c2"==fileType, this->userData);
 }
 
 void O5mDecode::DecodeBoundingBox()
@@ -172,7 +173,7 @@ void O5mDecode::DecodeBoundingBox()
 	double y2 = DecodeZigzag(this->handle) / 1e7; //lat
 
 	if(this->funcStoreBounds != NULL)
-		this->funcStoreBounds(x1, y1, x2, y2);
+		this->funcStoreBounds(x1, y1, x2, y2, this->userData);
 }
 
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
@@ -306,7 +307,7 @@ void O5mDecode::DecodeNode()
 	}
 
 	if(this->funcStoreNode != NULL)
-		this->funcStoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
+		this->funcStoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon, this->userData);
 }
 
 void O5mDecode::DecodeWay()
@@ -357,7 +358,7 @@ void O5mDecode::DecodeWay()
 	}
 
 	if (this->funcStoreWay != NULL)
-		this->funcStoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
+		this->funcStoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff, this->userData);
 }
 
 void O5mDecode::DecodeRelation()
@@ -458,7 +459,7 @@ void O5mDecode::DecodeRelation()
 
 	if(this->funcStoreRelation != NULL)
 		this->funcStoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
-			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
+			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff, this->userData);
 
 }
 
