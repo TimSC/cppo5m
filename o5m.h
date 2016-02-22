@@ -13,6 +13,7 @@ void TestEncodeNumber();
 
 typedef std::map<std::string, std::string> TagMap;
 
+///Simply stores meta data files for a map object
 class MetaData
 {
 public:
@@ -27,6 +28,7 @@ public:
 	MetaData& operator=(const MetaData &arg);
 };
 
+///Decodes a binary o5m stream and fires a series of events to the output object derived from IDataStreamHandler
 class O5mDecode
 {
 protected:
@@ -74,6 +76,7 @@ public:
 	class IDataStreamHandler *output;
 };
 
+///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.
 class IDataStreamHandler
 {
 public:
@@ -88,6 +91,7 @@ public:
 		const std::vector<std::string> &refRoles) {};
 };
 
+///Encodes a stream of map objects into an o5m output binary stream
 class O5mEncode : public IDataStreamHandler
 {
 protected:

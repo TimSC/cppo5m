@@ -50,6 +50,7 @@ public:
 	OsmRelation& operator=(const OsmRelation &arg);
 };
 
+///Provides in memory decoding and encoding of o5m binary streams
 class OsmData : public IDataStreamHandler
 {
 public:
