@@ -81,11 +81,11 @@ public:
 	virtual void StoreBounds(double x1, double y1, double x2, double y2) {};
 	virtual void StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon) {};
-	virtual void StoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs) {};
-	virtual void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
-		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles) {};
+	virtual void StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs) {};
+	virtual void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles) {};
 };
 
 class O5mEncode : public IDataStreamHandler
@@ -126,11 +126,11 @@ public:
 	void StoreBounds(double x1, double y1, double x2, double y2);
 	void StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon);
-	void StoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs);
-	void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
-		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles);
+	void StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs);
+	void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles);
 
 };
 

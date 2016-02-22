@@ -623,7 +623,7 @@ void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData,
 }
 
 void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, std::vector<int64_t> &refs)
+		const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	this->handle.write("\x11", 1);
 
@@ -659,9 +659,9 @@ void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData,
 	this->handle << binData;
 }
 	
-void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
-		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles)
+void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles)
 {
 	if(refTypeStrs.size() != refIds.size() | refTypeStrs.size() != refRoles.size())
 		throw std::invalid_argument("Length of ref vectors must be equal");
@@ -681,9 +681,9 @@ void O5mEncode::StoreRelation(int64_t objId, const MetaData &metaData, const Tag
 	std::stringstream refStream;
 	for(size_t i=0; i<refTypeStrs.size(); i++)
 	{
-		std::string &typeStr = refTypeStrs[i];
+		const std::string &typeStr = refTypeStrs[i];
 		int64_t refId = refIds[i];
-		std::string &role = refRoles[i];
+		const std::string &role = refRoles[i];
 		char typeCode[2] = "0";
 		int64_t deltaRef = 0;
 		if(typeStr == "node")

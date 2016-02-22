@@ -163,7 +163,7 @@ void OsmData::StoreNode(int64_t objId, const class MetaData &metaData,
 }
 
 void OsmData::StoreWay(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, std::vector<int64_t> &refs)
+		const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	class OsmWay osmWay;
 	osmWay.objId = objId;
@@ -175,9 +175,9 @@ void OsmData::StoreWay(int64_t objId, const class MetaData &metaData,
 
 }
 
-void OsmData::StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
-	std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-	std::vector<std::string> refRoles)
+void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles)
 {
 	class OsmRelation osmRelation;
 	osmRelation.objId = objId;

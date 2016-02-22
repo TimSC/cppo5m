@@ -69,10 +69,10 @@ public:
 	void StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon);
 	void StoreWay(int64_t objId, const class MetaData &metaDta, 
-		const TagMap &tags, std::vector<int64_t> &refs);
-	void StoreRelation(int64_t objId, const MetaData &metaData, const TagMap &tags, 
-		std::vector<std::string> refTypeStrs, std::vector<int64_t> refIds, 
-		std::vector<std::string> refRoles);
+		const TagMap &tags, const std::vector<int64_t> &refs);
+	void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles);
 };
 
 #endif //_OSMDATA_H
