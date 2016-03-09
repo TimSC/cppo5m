@@ -44,10 +44,8 @@ void ReadExactLength(std::istream &str, char *out, size_t len)
 		total += str.gcount();
 		if(str.fail())
 			throw std::runtime_error("Input underflow");
-		std::cout << len << "," << total << std::endl;
-		return;
 	}
-	std::cout << len << "," << total << std::endl;
+	//std::cout << len << "," << total << std::endl;
 }
 
 MetaData::MetaData()
@@ -166,7 +164,6 @@ void O5mDecode::DecodeHeader()
 	uint64_t length = DecodeVarint(this->handle);
 	std::string fileType;
 	fileType.resize(length);
-	this->handle.read(&fileType[0], length);
 	ReadExactLength(this->handle, &fileType[0], length);
 	if(this->output != NULL)
 		this->output->StoreIsDiff("o5c2"==fileType);

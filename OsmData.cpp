@@ -98,7 +98,9 @@ void OsmData::LoadFromO5m(std::streambuf &fi)
 	dec.DecodeHeader();
 
 	while (fi.in_avail()>0)
+	{
 		dec.DecodeNext();
+	}
 }
 
 void OsmData::SaveToO5m(std::streambuf &fi)
