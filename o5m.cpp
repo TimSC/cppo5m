@@ -40,12 +40,12 @@ void ReadExactLength(std::istream &str, char *out, size_t len)
 	size_t total = 0;
 	while(total < len)
 	{
-		str.read(&out[total], len);
+		str.read(&out[total], len-total);
 		total += str.gcount();
+		//std::cout << "Read " << total << " of " << len << std::endl;
 		if(str.fail())
 			throw std::runtime_error("Input underflow");
 	}
-	//std::cout << len << "," << total << std::endl;
 }
 
 MetaData::MetaData()
