@@ -35,6 +35,21 @@ void TestEncodeNumber()
 	assert (EncodeZigzag(-65) == "\x81\x01");
 }
 
+void ReadExactLength(std::istream &str, char *out, size_t len)
+{
+	size_t total = 0;
+	while(total < len)
+	{
+		str.read(&out[total], len);
+		total += str.gcount();
+		if(str.fail())
+			throw std::runtime_error("Input underflow");
+		std::cout << len << "," << total << std::endl;
+		return;
+	}
+	std::cout << len << "," << total << std::endl;
+}
+
 MetaData::MetaData()
 {
 	version=0;
@@ -142,8 +157,7 @@ bool O5mDecode::DecodeNext()
 	//Default behavior to skip unknown data
 	uint64_t length = DecodeVarint(this->handle);
 	tmpBuff.resize(length);
-	this->handle.read(&tmpBuff[0], length);
-	std::cout << length << "," << this->handle.gcount() << std::endl;
+	ReadExactLength(this->handle, &tmpBuff[0], length);
 	return false;
 }
 
@@ -153,7 +167,7 @@ void O5mDecode::DecodeHeader()
 	std::string fileType;
 	fileType.resize(length);
 	this->handle.read(&fileType[0], length);
-	std::cout << length << "," << this->handle.gcount() << std::endl;
+	ReadExactLength(this->handle, &fileType[0], length);
 	if(this->output != NULL)
 		this->output->StoreIsDiff("o5c2"==fileType);
 }
@@ -280,8 +294,7 @@ void O5mDecode::DecodeNode()
 	uint64_t length = DecodeVarint(this->handle);
 	std::string &nodeData = tmpBuff;
 	nodeData.resize(length);
-	this->handle.read(&nodeData[0], length);
-	std::cout << length << "," << this->handle.gcount() << std::endl;
+	ReadExactLength(this->handle, &nodeData[0], length);
 
 	//Decode object ID
 	std::istringstream nodeDataStream(nodeData);
@@ -314,8 +327,7 @@ void O5mDecode::DecodeWay()
 	uint64_t length = DecodeVarint(this->handle);
 	std::string &objData = tmpBuff;
 	objData.resize(length);
-	this->handle.read(&objData[0], length);
-	std::cout << length << "," << this->handle.gcount() << std::endl;
+	ReadExactLength(this->handle, &objData[0], length);
 
 	//Decode object ID
 	std::istringstream objDataStream(objData);
@@ -366,8 +378,7 @@ void O5mDecode::DecodeRelation()
 	uint64_t length = DecodeVarint(this->handle);
 	std::string &objData = tmpBuff;
 	objData.resize(length);
-	this->handle.read(&objData[0], length);
-	std::cout << length << "," << this->handle.gcount() << std::endl;
+	ReadExactLength(this->handle, &objData[0], length);
 
 	//Decode object ID
 	std::istringstream objDataStream(objData);
