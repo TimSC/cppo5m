@@ -7,6 +7,7 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <iostream>
 
 void TestDecodeNumber();
 void TestEncodeNumber();
@@ -32,7 +33,7 @@ public:
 class O5mDecode
 {
 protected:
-	std::istream &handle;
+	std::istream handle;
 
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
@@ -66,7 +67,7 @@ protected:
 	void DecodeRelation();
 
 public:
-	O5mDecode(std::istream &handleIn);
+	O5mDecode(std::streambuf &handleIn);
 	virtual ~O5mDecode();
 
 	void ResetDeltaCoding();
@@ -95,7 +96,7 @@ public:
 class O5mEncode : public IDataStreamHandler
 {
 protected:
-	std::ostream &handle;
+	std::ostream handle;
 
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
@@ -117,7 +118,7 @@ protected:
 	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
 public:
-	O5mEncode(std::ostream &handle);
+	O5mEncode(std::streambuf &handle);
 	virtual ~O5mEncode();
 
 	void ResetDeltaCoding();

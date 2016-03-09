@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdexcept>
 #include <sstream>
+#include <iostream>
 
 const int INTERNAL_BUFF_SIZE = 16;
 

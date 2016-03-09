@@ -91,17 +91,17 @@ OsmData::~OsmData()
 
 }
 
-void OsmData::LoadFromO5m(std::istream &fi)
+void OsmData::LoadFromO5m(std::streambuf &fi)
 {
 	class O5mDecode dec(fi);
 	dec.output = this;
 	dec.DecodeHeader();
 
-	while (!fi.eof())
+	while (fi.in_avail()>0)
 		dec.DecodeNext();
 }
 
-void OsmData::SaveToO5m(std::ostream &fi)
+void OsmData::SaveToO5m(std::streambuf &fi)
 {
 	class O5mEncode enc(fi);
 	enc.StoreIsDiff(this->isDiff);

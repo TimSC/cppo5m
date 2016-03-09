@@ -65,7 +65,7 @@ MetaData& MetaData::operator=(const MetaData &a)
 
 // ****** o5m decoder ******
 
-O5mDecode::O5mDecode(std::istream &handleIn) : handle(handleIn),
+O5mDecode::O5mDecode(std::streambuf &handleIn) : handle(&handleIn),
 	output(NULL),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000)
@@ -143,6 +143,7 @@ bool O5mDecode::DecodeNext()
 	uint64_t length = DecodeVarint(this->handle);
 	tmpBuff.resize(length);
 	this->handle.read(&tmpBuff[0], length);
+	std::cout << length << "," << this->handle.gcount() << std::endl;
 	return false;
 }
 
@@ -152,6 +153,7 @@ void O5mDecode::DecodeHeader()
 	std::string fileType;
 	fileType.resize(length);
 	this->handle.read(&fileType[0], length);
+	std::cout << length << "," << this->handle.gcount() << std::endl;
 	if(this->output != NULL)
 		this->output->StoreIsDiff("o5c2"==fileType);
 }
@@ -279,6 +281,7 @@ void O5mDecode::DecodeNode()
 	std::string &nodeData = tmpBuff;
 	nodeData.resize(length);
 	this->handle.read(&nodeData[0], length);
+	std::cout << length << "," << this->handle.gcount() << std::endl;
 
 	//Decode object ID
 	std::istringstream nodeDataStream(nodeData);
@@ -312,6 +315,7 @@ void O5mDecode::DecodeWay()
 	std::string &objData = tmpBuff;
 	objData.resize(length);
 	this->handle.read(&objData[0], length);
+	std::cout << length << "," << this->handle.gcount() << std::endl;
 
 	//Decode object ID
 	std::istringstream objDataStream(objData);
@@ -363,6 +367,7 @@ void O5mDecode::DecodeRelation()
 	std::string &objData = tmpBuff;
 	objData.resize(length);
 	this->handle.read(&objData[0], length);
+	std::cout << length << "," << this->handle.gcount() << std::endl;
 
 	//Decode object ID
 	std::istringstream objDataStream(objData);
@@ -461,8 +466,8 @@ void O5mDecode::DecodeRelation()
 
 // ************** o5m encoder ****************
 
-O5mEncode::O5mEncode(std::ostream &handleIn):
-	handle(handleIn),
+O5mEncode::O5mEncode(std::streambuf &handleIn):
+	handle(&handleIn),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000)
 {
