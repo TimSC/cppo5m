@@ -38,7 +38,8 @@ public:
 
 int main()
 {
-	std::ifstream infi("o5mtest.o5m");
+	std::filebuf infi;
+	infi.open("o5mtest.o5m", std::ios::in);
 
 	class O5mDecode dec(infi);
 	class ResultHandler resultHandler;
@@ -46,7 +47,7 @@ int main()
 
 	dec.DecodeHeader();
 
-	while (!infi.eof())
+	while (!infi.in_avail())
 		dec.DecodeNext();
 }
 
