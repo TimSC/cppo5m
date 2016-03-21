@@ -13,6 +13,7 @@ void TestDecodeNumber();
 void TestEncodeNumber();
 
 typedef std::map<std::string, std::string> TagMap;
+void PrintTagMap(const TagMap &tagMap);
 
 ///Simply stores meta data files for a map object
 class MetaData

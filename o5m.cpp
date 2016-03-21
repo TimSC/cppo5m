@@ -76,6 +76,14 @@ MetaData& MetaData::operator=(const MetaData &a)
 	return *this;
 }
 
+void PrintTagMap(const TagMap &tagMap)
+{
+	for(TagMap::const_iterator it = tagMap.begin(); it != tagMap.end(); it++)
+	{
+		std::cout << it->first << "=" << it->second << std::endl;
+	}	
+}
+
 // ****** o5m decoder ******
 
 O5mDecode::O5mDecode(std::streambuf &handleIn) : handle(&handleIn),
