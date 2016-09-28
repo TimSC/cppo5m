@@ -46,8 +46,9 @@ int main()
 	dec.output = &resultHandler;
 
 	dec.DecodeHeader();
-
-	while (!infi.in_avail())
+	while (infi.in_avail()>0)
+	{
 		dec.DecodeNext();
+	}
 }
 

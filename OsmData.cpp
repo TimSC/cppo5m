@@ -25,6 +25,7 @@ OsmNode& OsmNode::operator=(const OsmNode &arg)
 	tags = arg.tags; 
 	lat = arg.lat;
 	lon = arg.lon;
+	return *this;
 }
 
 OsmWay::OsmWay()
@@ -48,6 +49,7 @@ OsmWay& OsmWay::operator=(const OsmWay &arg)
 	metaData = arg.metaData;
 	tags = arg.tags; 
 	refs = arg.refs;
+	return *this;
 }
 
 OsmRelation::OsmRelation()
@@ -73,6 +75,7 @@ OsmRelation& OsmRelation::operator=(const OsmRelation &arg)
 	refTypeStrs = arg.refTypeStrs;
 	refIds = arg.refIds;
 	refRoles = arg.refRoles;
+	return *this;
 }
 
 // ****** generic osm data store ******

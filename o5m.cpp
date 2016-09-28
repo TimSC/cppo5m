@@ -86,10 +86,11 @@ void PrintTagMap(const TagMap &tagMap)
 
 // ****** o5m decoder ******
 
-O5mDecode::O5mDecode(std::streambuf &handleIn) : handle(&handleIn),
-	output(NULL),
+O5mDecode::O5mDecode(std::streambuf &handleIn) : 
+	handle(&handleIn),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000)
+	refTableMaxSize(15000),
+	output(NULL)
 {
 	char tmp = handle.get();
 	if(handle.fail())
@@ -179,8 +180,8 @@ void O5mDecode::DecodeHeader()
 
 void O5mDecode::DecodeBoundingBox()
 {
-	uint64_t length = DecodeVarint(this->handle);
-	
+	DecodeVarint(this->handle); //Value discarded
+
 	//south-western corner 
 	double x1 = DecodeZigzag(this->handle) / 1e7; //lon
 	double y1 = DecodeZigzag(this->handle) / 1e7; //lat
@@ -257,7 +258,7 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	else
 	{
 		int64_t offset = this->stringPairs.size()-ref;
-		if(offset < 0 || offset >= this->stringPairs.size())
+		if(offset < 0 || offset >= (int64_t)this->stringPairs.size())
 			throw std::runtime_error("o5m reference out of range");
 		std::string &prevPair = this->stringPairs[offset];
 		std::istringstream ss(prevPair);
@@ -430,7 +431,7 @@ void O5mDecode::DecodeRelation()
 		else
 		{
 			int64_t offset = this->stringPairs.size()-refIndex;
-			if(offset < 0 || offset >= this->stringPairs.size())
+			if(offset < 0 || offset >= (int64_t)this->stringPairs.size())
 				throw std::runtime_error("o5m reference out of range");
 			typeAndRole = this->stringPairs[offset];
 		}
@@ -684,7 +685,7 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles)
 {
-	if(refTypeStrs.size() != refIds.size() | refTypeStrs.size() != refRoles.size())
+	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
 		throw std::invalid_argument("Length of ref vectors must be equal");
 
 	this->handle.write("\x12", 1);
