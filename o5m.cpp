@@ -6,6 +6,8 @@
 #include <cmath>
 #include "varint.h"
 #include "o5m.h"
+#include <iostream>
+using namespace std;
 
 // ****** o5m utilities ******
 
@@ -92,6 +94,7 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 	refTableMaxSize(15000),
 	output(NULL)
 {
+	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	char tmp = handle.get();
 	if(handle.fail())
 		throw std::runtime_error("Error reading input");
@@ -119,7 +122,7 @@ void O5mDecode::ResetDeltaCoding()
 	this->lastObjId = 0; //Used in delta encoding
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
-	this->stringPairs.clear();
+	this->stringPairs.Clear();
 	this->lastLat = 0;
 	this->lastLon = 0;
 	this->lastRefNode = 0;
@@ -226,11 +229,11 @@ void O5mDecode::ConsiderAddToStringRefTable(const std::string &firstStr, const s
 
 void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
 {
-	this->stringPairs.push_back(buff);
-
 	//Make sure it does not grow forever
-	while(this->stringPairs.size() > this->refTableMaxSize)
-		this->stringPairs.pop_front();
+	if(this->stringPairs.AvailableSpace() == 0)
+		this->stringPairs.PopFront();
+
+	this->stringPairs.PushBack(buff);
 }
 
 bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
@@ -257,10 +260,10 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	}
 	else
 	{
-		int64_t offset = this->stringPairs.size()-ref;
-		if(offset < 0 || offset >= (int64_t)this->stringPairs.size())
+		int64_t offset = this->stringPairs.Size()-ref;
+		if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
 			throw std::runtime_error("o5m reference out of range");
-		std::string &prevPair = this->stringPairs[offset];
+		const std::string &prevPair = this->stringPairs[offset];
 		std::istringstream ss(prevPair);
 		this->DecodeSingleString(ss, firstStr);
 		this->DecodeSingleString(ss, secondStr);
@@ -430,8 +433,8 @@ void O5mDecode::DecodeRelation()
 		}
 		else
 		{
-			int64_t offset = this->stringPairs.size()-refIndex;
-			if(offset < 0 || offset >= (int64_t)this->stringPairs.size())
+			int64_t offset = this->stringPairs.Size()-refIndex;
+			if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
 				throw std::runtime_error("o5m reference out of range");
 			typeAndRole = this->stringPairs[offset];
 		}
@@ -488,6 +491,7 @@ O5mEncode::O5mEncode(std::streambuf &handleIn):
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000)
 {
+	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	this->handle.write("\xff", 1);
 	this->ResetDeltaCoding();
 }
@@ -502,7 +506,7 @@ void O5mEncode::ResetDeltaCoding()
 	this->lastObjId = 0;
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
-	this->stringPairs.clear();
+	this->stringPairs.Clear();
 	this->lastLat = 0.0;
 	this->lastLon = 0.0;
 	this->lastRefNode = 0;
@@ -569,15 +573,7 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 
 size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
 {
-	indexFound = false;
-	for(size_t i=0; i< this->stringPairs.size(); i++)
-	{
-		if(this->stringPairs[i] != needle) continue;
-		indexFound = true;
-		return i;
-		break;
-	}
-	return 0;
+	return this->stringPairs.Index(needle, indexFound);
 }
 
 void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
@@ -592,7 +588,7 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 		bool indexFound = false;
 		size_t existIndex = FindStringPairsIndex(encodedStrings, indexFound);
 		if(indexFound) {
-			tmpStream << EncodeVarint(this->stringPairs.size() - existIndex);
+			tmpStream << EncodeVarint(this->stringPairs.Size() - existIndex);
 			return;
 		}
 	}
@@ -605,11 +601,11 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 
 void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 {
-	this->stringPairs.push_back(encodedStrings);
+	//Make sure it does not grow forever
+	if(this->stringPairs.AvailableSpace() == 0)
+		this->stringPairs.PopFront();
 
-	//Limit size of reference table
-	if(this->stringPairs.size() > this->refTableMaxSize)
-		this->stringPairs.pop_front();
+	this->stringPairs.PushBack(encodedStrings);
 }
 
 void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
@@ -737,7 +733,7 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 		size_t refIndex = this->FindStringPairsIndex(typeCodeAndRole, indexFound);
 		if(indexFound)
 		{
-			refStream << EncodeVarint(this->stringPairs.size() - refIndex);
+			refStream << EncodeVarint(this->stringPairs.Size() - refIndex);
 		}
 		else
 		{

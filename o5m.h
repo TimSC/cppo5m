@@ -5,7 +5,7 @@
 #include <string>
 #include <stdint.h>
 #include <vector>
-#include <deque>
+#include "fixeddeque.h"
 #include <map>
 #include <iostream>
 
@@ -39,7 +39,7 @@ protected:
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
-	std::deque<std::string> stringPairs;
+	FixedDeque<std::string> stringPairs;
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
@@ -102,7 +102,7 @@ protected:
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
-	std::deque<std::string> stringPairs;
+	FixedDeque<std::string> stringPairs;
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
