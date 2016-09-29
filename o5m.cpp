@@ -584,15 +584,14 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 
 size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
 {
-	size_t i = this->stringPairs.Index(needle, indexFound, true);
 	map<std::string, int>::iterator it = this->stringPairsDict.find(needle);
-	/*if (it != this->stringPairsDict.end())
+	if (it == this->stringPairsDict.end())
 	{
-		cout << i << "," << indexFound << "," << this->runningRefOffset - it->second << endl;
-	}*/
-	if (indexFound != (it != this->stringPairsDict.end()))
-		throw runtime_error("splat");
-	return i;
+		indexFound = false;
+		return 0;
+	}
+	indexFound = true;
+	return this->runningRefOffset - it->second;
 }
 
 void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
