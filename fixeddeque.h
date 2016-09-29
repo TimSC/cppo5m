@@ -37,7 +37,7 @@ public:
 	T PopBack();
 	void Clear();
 	const T& operator[] (int index);
-	size_t Index(const T &needle, bool &indexFoundOut);
+	size_t Index(const T &needle, bool &indexFoundOut, bool fromEnd);
 };
 
 template <class T> FixedDeque<T>::FixedDeque()
@@ -171,7 +171,7 @@ template <class T> const T& FixedDeque<T>::operator[] (int index)
 	return this->buffer[cursor];
 }
 
-template <class T> size_t FixedDeque<T>::Index(const T &needle, bool &indexFoundOut)
+template <class T> size_t FixedDeque<T>::Index(const T &needle, bool &indexFoundOut, bool fromEnd)
 {
 	indexFoundOut = false;
 	size_t currentSize = this->Size();
@@ -182,6 +182,8 @@ template <class T> size_t FixedDeque<T>::Index(const T &needle, bool &indexFound
 
 		if(obj2 != needle) continue;
 		indexFoundOut = true;
+		if (fromEnd)
+			return currentSize - i;
 		return i;
 	}
 	return 0;

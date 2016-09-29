@@ -40,11 +40,13 @@ protected:
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
 	FixedDeque<std::string> stringPairs;
+	map<std::string, int> stringPairsDict;  
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
 	int64_t lastRefWay;
 	int64_t lastRefRelation;
+	int64_t runningRefOffset;
 
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
@@ -103,6 +105,7 @@ protected:
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
 	FixedDeque<std::string> stringPairs;
+	map<std::string, int> stringPairsDict; 
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
@@ -111,6 +114,7 @@ protected:
 
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
+	int64_t runningRefOffset;
 
 	void EncodeMetaData(const class MetaData &metaData, std::ostream &outStream);
 	void WriteStringPair(const std::string &firstString, const std::string &secondString, 

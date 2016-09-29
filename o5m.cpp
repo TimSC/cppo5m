@@ -90,6 +90,7 @@ void PrintTagMap(const TagMap &tagMap)
 
 O5mDecode::O5mDecode(std::streambuf &handleIn) : 
 	handle(&handleIn),
+	runningRefOffset(0),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	output(NULL)
@@ -123,6 +124,8 @@ void O5mDecode::ResetDeltaCoding()
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
 	this->stringPairs.Clear();
+	this->stringPairsDict.clear();
+	this->runningRefOffset = 0;
 	this->lastLat = 0;
 	this->lastLon = 0;
 	this->lastRefNode = 0;
@@ -231,9 +234,14 @@ void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
 {
 	//Make sure it does not grow forever
 	if(this->stringPairs.AvailableSpace() == 0)
-		this->stringPairs.PopFront();
+	{
+		const string &old = this->stringPairs.PopFront();
+		this->stringPairsDict.erase(old);
+	}
 
 	this->stringPairs.PushBack(buff);
+	this->stringPairsDict[buff] = this->runningRefOffset;
+	this->runningRefOffset += 1;
 }
 
 bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
@@ -489,7 +497,8 @@ void O5mDecode::DecodeRelation()
 O5mEncode::O5mEncode(std::streambuf &handleIn):
 	handle(&handleIn),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000)
+	refTableMaxSize(15000),
+	runningRefOffset(0)
 {
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	this->handle.write("\xff", 1);
@@ -507,6 +516,8 @@ void O5mEncode::ResetDeltaCoding()
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
 	this->stringPairs.Clear();
+	this->stringPairsDict.clear();
+	this->runningRefOffset = 0;
 	this->lastLat = 0.0;
 	this->lastLon = 0.0;
 	this->lastRefNode = 0;
@@ -573,7 +584,15 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 
 size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
 {
-	return this->stringPairs.Index(needle, indexFound);
+	size_t i = this->stringPairs.Index(needle, indexFound, true);
+	map<std::string, int>::iterator it = this->stringPairsDict.find(needle);
+	/*if (it != this->stringPairsDict.end())
+	{
+		cout << i << "," << indexFound << "," << this->runningRefOffset - it->second << endl;
+	}*/
+	if (indexFound != (it != this->stringPairsDict.end()))
+		throw runtime_error("splat");
+	return i;
 }
 
 void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
@@ -588,7 +607,7 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 		bool indexFound = false;
 		size_t existIndex = FindStringPairsIndex(encodedStrings, indexFound);
 		if(indexFound) {
-			tmpStream << EncodeVarint(this->stringPairs.Size() - existIndex);
+			tmpStream << EncodeVarint(existIndex);
 			return;
 		}
 	}
@@ -603,9 +622,14 @@ void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 {
 	//Make sure it does not grow forever
 	if(this->stringPairs.AvailableSpace() == 0)
-		this->stringPairs.PopFront();
+	{
+		const string &st = this->stringPairs.PopFront();
+		this->stringPairsDict.erase(st);
+	}
 
 	this->stringPairs.PushBack(encodedStrings);
+	this->stringPairsDict[encodedStrings] = this->runningRefOffset;
+	this->runningRefOffset ++;
 }
 
 void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
@@ -728,12 +752,11 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 		std::string typeCodeAndRole(typeCode);
 		typeCodeAndRole.append(role);
 
-
 		bool indexFound = false;
 		size_t refIndex = this->FindStringPairsIndex(typeCodeAndRole, indexFound);
 		if(indexFound)
 		{
-			refStream << EncodeVarint(this->stringPairs.Size() - refIndex);
+			refStream << EncodeVarint(refIndex);
 		}
 		else
 		{
