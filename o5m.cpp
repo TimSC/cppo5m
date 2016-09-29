@@ -90,7 +90,6 @@ void PrintTagMap(const TagMap &tagMap)
 
 O5mDecode::O5mDecode(std::streambuf &handleIn) : 
 	handle(&handleIn),
-	runningRefOffset(0),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	output(NULL)
@@ -124,8 +123,6 @@ void O5mDecode::ResetDeltaCoding()
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
 	this->stringPairs.Clear();
-	this->stringPairsDict.clear();
-	this->runningRefOffset = 0;
 	this->lastLat = 0;
 	this->lastLon = 0;
 	this->lastRefNode = 0;
@@ -235,13 +232,10 @@ void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
 	//Make sure it does not grow forever
 	if(this->stringPairs.AvailableSpace() == 0)
 	{
-		const string &old = this->stringPairs.PopFront();
-		this->stringPairsDict.erase(old);
+		this->stringPairs.PopFront();
 	}
 
 	this->stringPairs.PushBack(buff);
-	this->stringPairsDict[buff] = this->runningRefOffset;
-	this->runningRefOffset += 1;
 }
 
 bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)

@@ -46,7 +46,6 @@ protected:
 	int64_t lastRefNode;
 	int64_t lastRefWay;
 	int64_t lastRefRelation;
-	int64_t runningRefOffset;
 
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
