@@ -567,8 +567,16 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 			int64_t deltaChangeSet = metaData.changeset - this->lastChangeSet;
 			outStream << EncodeZigzag(deltaChangeSet);
 			this->lastChangeSet = metaData.changeset;
-			std::string encUid = EncodeVarint(metaData.uid);
-			this->WriteStringPair(encUid, metaData.username, outStream);
+			cout << metaData.username << endl;	
+			if (metaData.uid != 0)
+			{
+				std::string encUid = EncodeVarint(metaData.uid);
+				this->WriteStringPair(encUid, metaData.username, outStream);
+			}
+			else
+			{
+				this->WriteStringPair("", metaData.username, outStream);
+			}
 		}
 	}
 	else
