@@ -301,7 +301,8 @@ void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out
 			out.changeset = this->lastChangeSet;
 			//print "changeset", self.lastChangeSet, deltaChangeSet
 			this->ReadStringPair(nodeDataStream, uidStr, out.username);
-			out.uid = atoi(uidStr.c_str());
+			if (out.username.size() > 0)
+				out.uid = DecodeVarint(uidStr.c_str());
 		}
 	}
 }
