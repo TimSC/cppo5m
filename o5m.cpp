@@ -295,7 +295,7 @@ void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out
 			out.changeset = this->lastChangeSet;
 			//print "changeset", self.lastChangeSet, deltaChangeSet
 			this->ReadStringPair(nodeDataStream, uidStr, out.username);
-			if (out.username.size() > 0)
+			if (uidStr.size() > 0)
 				out.uid = DecodeVarint(uidStr.c_str());
 		}
 	}
@@ -567,7 +567,6 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 			int64_t deltaChangeSet = metaData.changeset - this->lastChangeSet;
 			outStream << EncodeZigzag(deltaChangeSet);
 			this->lastChangeSet = metaData.changeset;
-			cout << metaData.username << endl;	
 			if (metaData.uid != 0)
 			{
 				std::string encUid = EncodeVarint(metaData.uid);
