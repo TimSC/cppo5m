@@ -621,8 +621,12 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 
 void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 {
+	size_t refTableSize = this->stringPairs.Size();
+	assert(refTableSize == this->stringPairsDict.size());
+	size_t availableSpace = refTableMaxSize - refTableSize;
+
 	//Make sure it does not grow forever
-	if(this->stringPairs.AvailableSpace() == 0)
+	if(availableSpace == 0)
 	{
 		const string &st = this->stringPairs.PopFront();
 		this->stringPairsDict.erase(st);
