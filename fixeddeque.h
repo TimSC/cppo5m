@@ -30,6 +30,8 @@ public:
 	size_t AvailableSpace();
 	size_t Size();
 	void Debug();
+	size_t Fc();
+	size_t Bc();
 
 	void PushBack(const T &obj);
 	void PushFront(const T &obj);
@@ -53,7 +55,7 @@ template <class T> FixedDeque<T>::~FixedDeque()
 
 template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 {
-	if(si == this->buffer.size()) return;
+	if(si+1 == this->buffer.size()) return;
 	size_t currentSize = this->Size();
 	if(si < currentSize)
 		throw runtime_error("insufficient space to hold current content");
@@ -73,7 +75,7 @@ template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 		}
 		
 		//Resize and copy back in
-		this->buffer.resize(si);
+		this->buffer.resize(si+1);
 		for(size_t i=0 ; i < currentSize; i++)
 		{
 			this->buffer[i] = tmp[i];
@@ -83,7 +85,7 @@ template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 	}
 	else
 	{
-		this->buffer.resize(si);
+		this->buffer.resize(si+1);
 		this->frontCursor = 0;
 		this->backCursor = 0;
 	}
@@ -92,10 +94,10 @@ template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 template <class T> size_t FixedDeque<T>::AvailableSpace()
 {
 	if (backCursor == frontCursor)
-		return this->buffer.size();
+		return this->buffer.size()-1;
 	if (backCursor < frontCursor)
-		return frontCursor - backCursor;
-	return (this->buffer.size() - backCursor) + frontCursor;
+		return frontCursor - backCursor - 1;
+	return (this->buffer.size() - backCursor) + frontCursor-1;
 }
 
 template <class T> size_t FixedDeque<T>::Size()
@@ -110,6 +112,16 @@ template <class T> size_t FixedDeque<T>::Size()
 template <class T> void FixedDeque<T>::Debug()
 {
 	cout << "debug" << this->frontCursor << "," << this->backCursor << endl;
+}
+
+template <class T> size_t FixedDeque<T>::Fc()
+{
+	return this->frontCursor;
+}
+
+template <class T> size_t FixedDeque<T>::Bc()
+{
+	return this->backCursor;
 }
 
 template <class T> void FixedDeque<T>::PushBack(const T &obj)
