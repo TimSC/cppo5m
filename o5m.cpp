@@ -94,17 +94,20 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 	refTableMaxSize(15000),
 	output(NULL)
 {
+	if(handle.fail())
+		throw std::runtime_error("Stream handle indicating failure in o5m decode");
+
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	char tmp = handle.get();
 	if(handle.fail())
-		throw std::runtime_error("Error reading input");
+		throw std::runtime_error("Error reading buffer to get o5m magic number");
 	std::string tmp2(&tmp, 1);
 	if(tmp2 != "\xff")
 		throw std::runtime_error("First byte has wrong value");
 
 	tmp = handle.get();
 	if(handle.fail())
-		throw std::runtime_error("Error reading input");
+		throw std::runtime_error("Error reading buffer to get o5m header");
 	std::string tmp3(&tmp, 1);
 	if(tmp3 != "\xe0")
 		throw std::runtime_error("Missing header");
