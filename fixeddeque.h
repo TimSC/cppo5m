@@ -5,9 +5,9 @@
 #include <stdlib.h>
 using namespace std;
 
-inline signed long WrapAround(signed long val, size_t limit)
+inline signed long WrapAround(long int val, long int limit)
 {
-	div_t chk = div(val, limit);
+	ldiv_t chk = ldiv(val, limit);
 	if (chk.rem >= 0) return chk.rem;
 	return limit + chk.rem;
 }
