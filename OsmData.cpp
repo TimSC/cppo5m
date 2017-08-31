@@ -109,6 +109,11 @@ void OsmData::LoadFromO5m(std::streambuf &fi)
 void OsmData::SaveToO5m(std::streambuf &fi)
 {
 	class O5mEncode enc(fi);
+	this->StreamTo(enc);
+}
+
+void OsmData::StreamTo(class IDataStreamHandler &enc)
+{
 	enc.StoreIsDiff(this->isDiff);
 	for(size_t i=0;i< this->bounds.size(); i++) {
 		std::vector<double> &bbox = this->bounds[i];

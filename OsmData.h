@@ -64,6 +64,7 @@ public:
 	virtual ~OsmData();
 	void LoadFromO5m(std::streambuf &fi);
 	void SaveToO5m(std::streambuf &fi);
+	void StreamTo(class IDataStreamHandler &out);
 
 	void StoreIsDiff(bool);
 	void StoreBounds(double x1, double y1, double x2, double y2);
