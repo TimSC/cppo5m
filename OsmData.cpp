@@ -112,7 +112,7 @@ void OsmData::SaveToO5m(std::streambuf &fi)
 	this->StreamTo(enc);
 }
 
-void OsmData::StreamTo(class IDataStreamHandler &enc)
+void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream)
 {
 	enc.StoreIsDiff(this->isDiff);
 	for(size_t i=0;i< this->bounds.size(); i++) {
@@ -140,7 +140,8 @@ void OsmData::StreamTo(class IDataStreamHandler &enc)
 			relation.refTypeStrs, relation.refIds, 
 			relation.refRoles);
 	}
-	enc.Finish();
+	if(finishStream)
+		enc.Finish();
 }
 
 void OsmData::StoreIsDiff(bool d)
