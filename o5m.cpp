@@ -56,6 +56,7 @@ MetaData::MetaData()
 	timestamp=0;
 	changeset=0;
 	uid=0;
+	visible=true;
 }
 
 MetaData::~MetaData()
@@ -75,6 +76,7 @@ MetaData& MetaData::operator=(const MetaData &a)
 	changeset = a.changeset;
 	uid = a.uid;
 	username = a.username;
+	visible = a.visible;
 	return *this;
 }
 
@@ -83,7 +85,7 @@ void PrintTagMap(const TagMap &tagMap)
 	for(TagMap::const_iterator it = tagMap.begin(); it != tagMap.end(); it++)
 	{
 		std::cout << it->first << "=" << it->second << std::endl;
-	}	
+	}
 }
 
 // ****** o5m decoder ******
@@ -491,45 +493,26 @@ void O5mDecode::DecodeRelation()
 }
 
 // ************** o5m encoder ****************
-
-O5mEncode::O5mEncode(std::streambuf &handleIn):
-	refTableLengthThreshold(250),
+O5mEncodeBase::O5mEncodeBase():	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	runningRefOffset(0)
 {
-	handle = new std::ostream(&handleIn);
+
+}
+
+O5mEncodeBase::~O5mEncodeBase()
+{
+
+}
+
+void O5mEncodeBase::WriteStart()
+{
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	this->write("\xff", 1);
 	this->ResetDeltaCoding();
 }
 
-#ifdef PYTHON_AWARE
-O5mEncode::O5mEncode(PyObject* obj):
-	refTableLengthThreshold(250),
-	refTableMaxSize(15000),
-	runningRefOffset(0)
-{
-	handle = NULL;
-	m_PyObj = obj;
-	Py_INCREF(m_PyObj);
-	m_Write = PyObject_GetAttrString(m_PyObj, "write");
-	this->stringPairs.SetBufferSize(this->refTableMaxSize);
-	this->write("\xff", 1);
-	this->ResetDeltaCoding();
-}
-#endif //PYTHON_AWARE
-
-O5mEncode::~O5mEncode()
-{
-	if(handle != NULL)
-		delete handle;
-	#ifdef PYTHON_AWARE
-	Py_XDECREF(m_Write);
-	Py_XDECREF(m_PyObj);
-	#endif
-}
-
-void O5mEncode::ResetDeltaCoding()
+void O5mEncodeBase::ResetDeltaCoding()
 {
 	this->lastObjId = 0;
 	this->lastTimeStamp = 0;
@@ -544,7 +527,7 @@ void O5mEncode::ResetDeltaCoding()
 	this->lastRefRelation = 0;
 }
 
-void O5mEncode::StoreIsDiff(bool isDiff)
+void O5mEncodeBase::StoreIsDiff(bool isDiff)
 {
 	this->write("\xe0", 1);
 	std::string headerData;
@@ -557,7 +540,7 @@ void O5mEncode::StoreIsDiff(bool isDiff)
 	*this << headerData;
 }
 
-void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2)
+void O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	//south-western corner 
 	std::string bboxData;
@@ -574,7 +557,7 @@ void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2)
 	*this << bboxData;
 }
 
-void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
+void O5mEncodeBase::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
 {
 	//Decode author and time stamp
 	if(metaData.version != 0)
@@ -608,7 +591,7 @@ void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &out
 	}
 }
 
-size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
+size_t O5mEncodeBase::FindStringPairsIndex(std::string needle, bool &indexFound)
 {
 	map<std::string, int>::iterator it = this->stringPairsDict.find(needle);
 	if (it == this->stringPairsDict.end())
@@ -620,7 +603,7 @@ size_t O5mEncode::FindStringPairsIndex(std::string needle, bool &indexFound)
 	return this->runningRefOffset - it->second;
 }
 
-void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString, 
+void O5mEncodeBase::WriteStringPair(const std::string &firstString, const std::string &secondString, 
 	std::ostream &tmpStream)
 {
 	std::string encodedStrings = firstString;
@@ -643,7 +626,7 @@ void O5mEncode::WriteStringPair(const std::string &firstString, const std::strin
 		this->AddToRefTable(encodedStrings);
 }
 
-void O5mEncode::AddToRefTable(const std::string &encodedStrings)
+void O5mEncodeBase::AddToRefTable(const std::string &encodedStrings)
 {
 	size_t refTableSize = this->stringPairs.Size();
 	assert(refTableSize == this->stringPairsDict.size());
@@ -661,7 +644,7 @@ void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 	this->runningRefOffset ++;
 }
 
-void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
+void O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double latIn, double lonIn)
 {
 	this->write("\x10",1);
@@ -693,7 +676,7 @@ void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData,
 	*this << binData;
 }
 
-void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData, 
+void O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	this->write("\x11", 1);
@@ -730,7 +713,7 @@ void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData,
 	*this << binData;
 }
 	
-void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+void O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles)
 {
@@ -811,19 +794,48 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 
 }
 
-void O5mEncode::Sync()
+void O5mEncodeBase::Sync()
 {
 	this->write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
 }
 
-void O5mEncode::Reset()
+void O5mEncodeBase::Reset()
 {
 	this->write("\xff", 1);
 	this->ResetDeltaCoding();
 }
 
-void O5mEncode::Finish()
+void O5mEncodeBase::Finish()
 {
 	this->write("\xfe", 1);
 }
+
+// **** Output specific encoders
+
+O5mEncode::O5mEncode(std::streambuf &handleIn): O5mEncodeBase(), handle(&handleIn)
+{
+	this->WriteStart();
+}
+
+O5mEncode::~O5mEncode()
+{
+
+}
+
+#ifdef PYTHON_AWARE
+PyO5mEncode::PyO5mEncode(PyObject* obj): O5mEncodeBase()
+{
+	m_PyObj = obj;
+	Py_INCREF(m_PyObj);
+	m_Write = PyObject_GetAttrString(m_PyObj, "write");
+	this->WriteStart();
+}
+
+PyO5mEncode::~PyO5mEncode()
+{
+	Py_XDECREF(m_Write);
+	Py_XDECREF(m_PyObj);
+}
+
+#endif //PYTHON_AWARE
 

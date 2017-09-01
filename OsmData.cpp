@@ -112,6 +112,12 @@ void OsmData::SaveToO5m(std::streambuf &fi)
 	this->StreamTo(enc);
 }
 
+void OsmData::SaveToOsmXml(std::streambuf &fi)
+{
+	class OsmXmlEncode enc(fi);
+	this->StreamTo(enc);
+}
+
 void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream)
 {
 	enc.StoreIsDiff(this->isDiff);

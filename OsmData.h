@@ -2,6 +2,7 @@
 #define _OSMDATA_H
 
 #include "o5m.h"
+#include "osmxml.h"
 
 // ****** generic osm data store ******
 
@@ -64,6 +65,7 @@ public:
 	virtual ~OsmData();
 	void LoadFromO5m(std::streambuf &fi);
 	void SaveToO5m(std::streambuf &fi);
+	void SaveToOsmXml(std::streambuf &fi);
 	void StreamTo(class IDataStreamHandler &out, bool finishStream = true);
 
 	void StoreIsDiff(bool);

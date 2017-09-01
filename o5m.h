@@ -26,6 +26,7 @@ public:
 	int64_t timestamp, changeset;
 	uint64_t uid;
 	std::string username;
+	bool visible;
 
 	MetaData();
 	virtual ~MetaData();
@@ -102,10 +103,9 @@ public:
 };
 
 ///Encodes a stream of map objects into an o5m output binary stream
-class O5mEncode : public IDataStreamHandler
+class O5mEncodeBase : public IDataStreamHandler
 {
 protected:
-	std::ostream *handle;
 
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
@@ -122,61 +122,19 @@ protected:
 	unsigned refTableMaxSize;
 	int64_t runningRefOffset;
 
+	void WriteStart();
 	void EncodeMetaData(const class MetaData &metaData, std::ostream &outStream);
 	void WriteStringPair(const std::string &firstString, const std::string &secondString, 
 			std::ostream &tmpStream);
 	void AddToRefTable(const std::string &encodedStrings);
 	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
-	inline void write (const char* s, streamsize n)
-	{
-		#ifdef PYTHON_AWARE
-			if(this->m_Write != NULL)
-			{
-				#if PY_MAJOR_VERSION < 3
-				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
-				#else
-				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
-				#endif 
-				Py_XDECREF(ret);
-			}
-			else if(this->handle != NULL)
-				this->handle->write(s, n);
-		#else
-			this->handle->write(s, n);
-		#endif
-	}
-
-	inline void operator<< (const string &val)
-	{
-		#ifdef PYTHON_AWARE
-			if(this->m_Write != NULL)
-			{
-				#if PY_MAJOR_VERSION < 3
-				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
-				#else
-				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
-				#endif 
-				Py_XDECREF(ret);
-			}
-			else if(this->handle != NULL)
-				*this->handle << val;
-		#else
-			*this->handle << val;
-		#endif
-	}
-
-	#ifdef PYTHON_AWARE
-	PyObject* m_PyObj;
-	PyObject* m_Write;
-	#endif
+	virtual void write (const char* s, streamsize n)=0;
+	virtual void operator<< (const string &val)=0;
 
 public:
-	O5mEncode(std::streambuf &handle);
-	#ifdef PYTHON_AWARE
-	O5mEncode(PyObject* obj);
-	#endif
-	virtual ~O5mEncode();
+	O5mEncodeBase();
+	virtual ~O5mEncodeBase();
 
 	void ResetDeltaCoding();
 
@@ -195,6 +153,64 @@ public:
 		const std::vector<std::string> &refRoles);
 
 };
+
+class O5mEncode : public O5mEncodeBase
+{
+private:
+	std::ostream handle;
+	
+	virtual void write (const char* s, streamsize n)
+	{
+		this->handle.write(s, n);
+	}
+
+	virtual void operator<< (const string &val)
+	{
+		this->handle << val;
+	}
+
+public:
+	O5mEncode(std::streambuf &handle);
+	virtual ~O5mEncode();
+};
+
+#ifdef PYTHON_AWARE
+class PyO5mEncode : public O5mEncodeBase
+{
+private:
+	PyObject* m_PyObj;
+	PyObject* m_Write;
+
+	virtual void write (const char* s, streamsize n)
+	{
+		if(this->m_Write == NULL)
+			return;
+		#if PY_MAJOR_VERSION < 3
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+		#else
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+		#endif 
+		Py_XDECREF(ret);
+	}
+
+	virtual void operator<< (const string &val)
+	{
+		if(this->m_Write == NULL)
+			return;
+		#if PY_MAJOR_VERSION < 3
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+		#else
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+		#endif 
+		Py_XDECREF(ret);
+	}
+
+public:
+	PyO5mEncode(PyObject* obj);
+	virtual ~PyO5mEncode();	
+
+};
+#endif //PYTHON_AWARE
 
 #endif //_O5M_H
 
