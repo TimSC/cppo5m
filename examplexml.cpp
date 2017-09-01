@@ -8,13 +8,13 @@ int main()
 {
 	class OsmData osmData;
 	std::filebuf infi;
-	infi.open("o5mtest.o5m", std::ios::in);
+	infi.open("example.o5m", std::ios::in);
 	osmData.LoadFromO5m(infi);
 	cout << "nodes " << osmData.nodes.size() << endl;
 	cout << "ways " << osmData.ways.size() << endl;
 	cout << "relations " << osmData.relations.size() << endl;
 	std::filebuf outfi;
-	outfi.open("o5mtest2.osm", std::ios::out);
+	outfi.open("example2.osm", std::ios::out);
 	osmData.SaveToOsmXml(outfi);
 	outfi.close();
 }

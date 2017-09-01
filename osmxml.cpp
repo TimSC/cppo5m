@@ -1,5 +1,6 @@
 #include "osmxml.h"
 #include <sstream>
+#include <ctime>
 using namespace std;
 
 // ********* Utility classes ***********
@@ -43,7 +44,12 @@ void OsmXmlEncodeBase::WriteStart()
 void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::stringstream &ss)
 {
 	if(metaData.timestamp != 0)
-		ss << " timestamp='2012-05-25T09:28:47Z'";
+	{
+		time_t tt = metaData.timestamp;
+		char buf[50];
+		strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&tt));
+		ss << " timestamp='"<<buf<<"'";
+	}
 	if(metaData.uid != 0)
 		ss << " uid='" << metaData.uid << "'";
 	if(metaData.username.length() > 0)
@@ -81,7 +87,8 @@ void OsmXmlEncodeBase::StoreIsDiff(bool)
 void OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	stringstream ss;
-	ss << "<bounds minlat='"<<y1<<"' minlon='"<<x1<<"' ";
+	ss.precision(9);
+	ss << "  <bounds minlat='"<<y1<<"' minlon='"<<x1<<"' ";
 	ss << "maxlat='"<<y2<<"' maxlon='"<<x2<<"' />" << endl;
 	*this << ss.str();
 }
@@ -90,6 +97,7 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 	const TagMap &tags, double lat, double lon)
 {
 	stringstream ss;
+	ss.precision(9);
 	ss << "  <node id='"<<objId<<"'";
 	this->EncodeMetaData(metaData, ss);
 	ss << " lat='"<<lat<<"' lon='"<<lon<<"'";
@@ -97,7 +105,7 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 		ss <<" />" << endl;
 	else
 	{
-		ss <<" >" << endl;
+		ss <<">" << endl;
 
 		//Write tags
 		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
@@ -119,7 +127,7 @@ void OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData,
 		ss <<" />" << endl;
 	else
 	{
-		ss <<" >" << endl;
+		ss <<">" << endl;
 
 		//Write node IDs
 		for(size_t i=0; i<refs.size(); i++)
@@ -145,7 +153,7 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 		ss <<" />" << endl;
 	else
 	{
-		ss <<" >" << endl;
+		ss <<">" << endl;
 
 		//Write node IDs
 		for(size_t i=0; i<refTypeStrs.size(); i++)
