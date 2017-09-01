@@ -180,3 +180,20 @@ OsmXmlEncode::~OsmXmlEncode()
 
 }
 
+#ifdef PYTHON_AWARE
+PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj): OsmXmlEncodeBase()
+{
+	m_PyObj = obj;
+	Py_INCREF(m_PyObj);
+	m_Write = PyObject_GetAttrString(m_PyObj, "write");
+	this->WriteStart();
+}
+
+PyOsmXmlEncode::~PyOsmXmlEncode()
+{
+	Py_XDECREF(m_Write);
+	Py_XDECREF(m_PyObj);
+}
+
+#endif //PYTHON_AWARE
+

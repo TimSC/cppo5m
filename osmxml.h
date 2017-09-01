@@ -54,5 +54,43 @@ public:
 	virtual ~OsmXmlEncode();
 };
 
+#ifdef PYTHON_AWARE
+class PyOsmXmlEncode : public OsmXmlEncodeBase
+{
+private:
+	PyObject* m_PyObj;
+	PyObject* m_Write;
+
+	virtual void write (const char* s, streamsize n)
+	{
+		if(this->m_Write == NULL)
+			return;
+		#if PY_MAJOR_VERSION < 3
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+		#else
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+		#endif 
+		Py_XDECREF(ret);
+	}
+
+	virtual void operator<< (const string &val)
+	{
+		if(this->m_Write == NULL)
+			return;
+		#if PY_MAJOR_VERSION < 3
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+		#else
+		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+		#endif 
+		Py_XDECREF(ret);
+	}
+
+public:
+	PyOsmXmlEncode(PyObject* obj);
+	virtual ~PyOsmXmlEncode();	
+
+};
+#endif //PYTHON_AWARE
+
 #endif //_OSMXML_H
 
