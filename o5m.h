@@ -8,6 +8,9 @@
 #include "fixeddeque.h"
 #include <map>
 #include <iostream>
+#ifdef PYTHON_AWARE
+#include <Python.h>
+#endif
 
 void TestDecodeNumber();
 void TestEncodeNumber();
@@ -102,7 +105,7 @@ public:
 class O5mEncode : public IDataStreamHandler
 {
 protected:
-	std::ostream handle;
+	std::ostream *handle;
 
 	int64_t lastObjId;
 	int64_t lastTimeStamp;
@@ -125,8 +128,54 @@ protected:
 	void AddToRefTable(const std::string &encodedStrings);
 	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
+	inline void write (const char* s, streamsize n)
+	{
+		#ifdef PYTHON_AWARE
+			if(this->m_Write != NULL)
+			{
+				#if PY_MAJOR_VERSION < 3
+				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+				#else
+				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+				#endif 
+				Py_XDECREF(ret);
+			}
+			else if(this->handle != NULL)
+				this->handle->write(s, n);
+		#else
+			this->handle->write(s, n);
+		#endif
+	}
+
+	inline void operator<< (const string &val)
+	{
+		#ifdef PYTHON_AWARE
+			if(this->m_Write != NULL)
+			{
+				#if PY_MAJOR_VERSION < 3
+				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+				#else
+				PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+				#endif 
+				Py_XDECREF(ret);
+			}
+			else if(this->handle != NULL)
+				*this->handle << val;
+		#else
+			*this->handle << val;
+		#endif
+	}
+
+	#ifdef PYTHON_AWARE
+	PyObject* m_PyObj;
+	PyObject* m_Write;
+	#endif
+
 public:
 	O5mEncode(std::streambuf &handle);
+	#ifdef PYTHON_AWARE
+	O5mEncode(PyObject* obj);
+	#endif
 	virtual ~O5mEncode();
 
 	void ResetDeltaCoding();

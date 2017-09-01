@@ -493,19 +493,40 @@ void O5mDecode::DecodeRelation()
 // ************** o5m encoder ****************
 
 O5mEncode::O5mEncode(std::streambuf &handleIn):
-	handle(&handleIn),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	runningRefOffset(0)
 {
+	handle = new std::ostream(&handleIn);
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
-	this->handle.write("\xff", 1);
+	this->write("\xff", 1);
 	this->ResetDeltaCoding();
 }
 
+#ifdef PYTHON_AWARE
+O5mEncode::O5mEncode(PyObject* obj):
+	refTableLengthThreshold(250),
+	refTableMaxSize(15000),
+	runningRefOffset(0)
+{
+	handle = NULL;
+	m_PyObj = obj;
+	Py_INCREF(m_PyObj);
+	m_Write = PyObject_GetAttrString(m_PyObj, "write");
+	this->stringPairs.SetBufferSize(this->refTableMaxSize);
+	this->write("\xff", 1);
+	this->ResetDeltaCoding();
+}
+#endif //PYTHON_AWARE
+
 O5mEncode::~O5mEncode()
 {
-
+	if(handle != NULL)
+		delete handle;
+	#ifdef PYTHON_AWARE
+	Py_XDECREF(m_Write);
+	Py_XDECREF(m_PyObj);
+	#endif
 }
 
 void O5mEncode::ResetDeltaCoding()
@@ -525,15 +546,15 @@ void O5mEncode::ResetDeltaCoding()
 
 void O5mEncode::StoreIsDiff(bool isDiff)
 {
-	this->handle.write("\xe0", 1);
+	this->write("\xe0", 1);
 	std::string headerData;
 	if(isDiff)
 		headerData = "o5c2";
 	else
 		headerData = "o5m2";
 	std::string len = EncodeVarint(headerData.size());
-	this->handle << len;
-	this->handle << headerData;
+	*this << len;
+	*this << headerData;
 }
 
 void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2)
@@ -547,10 +568,10 @@ void O5mEncode::StoreBounds(double x1, double y1, double x2, double y2)
 	bboxData.append(EncodeZigzag(round(x2 * 1e7))); //lon
 	bboxData.append(EncodeZigzag(round(y2 * 1e7))); //lat
 	
-	this->handle.write("\xdb", 1);
+	this->write("\xdb", 1);
 	std::string len = EncodeVarint(bboxData.size());
-	this->handle << len;
-	this->handle << bboxData;
+	*this << len;
+	*this << bboxData;
 }
 
 void O5mEncode::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
@@ -643,7 +664,7 @@ void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double latIn, double lonIn)
 {
-	this->handle.write("\x10",1);
+	this->write("\x10",1);
 
 	//Object ID
 	std::stringstream tmpStream;
@@ -668,14 +689,14 @@ void O5mEncode::StoreNode(int64_t objId, const class MetaData &metaData,
 
 	std::string binData = tmpStream.str();
 	std::string len = EncodeVarint(binData.size());
-	this->handle << len;
-	this->handle << binData;
+	*this << len;
+	*this << binData;
 }
 
 void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs)
 {
-	this->handle.write("\x11", 1);
+	this->write("\x11", 1);
 
 	//Object ID
 	std::stringstream tmpStream;
@@ -705,8 +726,8 @@ void O5mEncode::StoreWay(int64_t objId, const class MetaData &metaData,
 		this->WriteStringPair(it->first, it->second, tmpStream);
 
 	std::string binData = tmpStream.str();
-	this->handle << EncodeVarint(binData.size());
-	this->handle << binData;
+	*this << EncodeVarint(binData.size());
+	*this << binData;
 }
 	
 void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
@@ -716,7 +737,7 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
 		throw std::invalid_argument("Length of ref vectors must be equal");
 
-	this->handle.write("\x12", 1);
+	this->write("\x12", 1);
 
 	//Object ID
 	std::stringstream tmpStream;
@@ -785,24 +806,24 @@ void O5mEncode::StoreRelation(int64_t objId, const class MetaData &metaData, con
 		this->WriteStringPair(it->first, it->second, tmpStream);
 
 	std::string binData = tmpStream.str();
-	this->handle << EncodeVarint(binData.size());
-	this->handle << binData;
+	*this << EncodeVarint(binData.size());
+	*this << binData;
 
 }
 
 void O5mEncode::Sync()
 {
-	this->handle.write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
+	this->write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
 }
 
 void O5mEncode::Reset()
 {
-	this->handle.write("\xff", 1);
+	this->write("\xff", 1);
 	this->ResetDeltaCoding();
 }
 
 void O5mEncode::Finish()
 {
-	this->handle.write("\xfe", 1);
+	this->write("\xfe", 1);
 }
 
