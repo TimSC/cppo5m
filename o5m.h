@@ -87,6 +87,8 @@ public:
 class IDataStreamHandler
 {
 public:
+	virtual ~IDataStreamHandler() {};
+
 	virtual void Sync() {};
 	virtual void Reset() {};
 	virtual void Finish() {};
