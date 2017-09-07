@@ -82,16 +82,27 @@ OsmRelation& OsmRelation::operator=(const OsmRelation &arg)
 
 OsmData::OsmData()
 {
-	nodes.clear();
-	ways.clear();
-	relations.clear();
-	bounds.clear();
-	isDiff = false;
+	this->Clear();
 }
 
 OsmData::~OsmData()
 {
 
+}
+
+OsmData::OsmData( const OsmData &obj)
+{
+	*this = obj;
+}
+
+OsmData& OsmData::operator=(const OsmData &obj)
+{
+	nodes = obj.nodes;
+	ways = obj.ways;
+	relations = obj.relations;
+	bounds = obj.bounds;
+	isDiff = obj.isDiff;
+	return *this;
 }
 
 void OsmData::LoadFromO5m(std::streambuf &fi)
@@ -148,6 +159,15 @@ void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream)
 	}
 	if(finishStream)
 		enc.Finish();
+}
+
+void OsmData::Clear()
+{
+	nodes.clear();
+	ways.clear();
+	relations.clear();
+	bounds.clear();
+	isDiff = false;
 }
 
 void OsmData::StoreIsDiff(bool d)
