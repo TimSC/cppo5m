@@ -1,6 +1,10 @@
 # cppo5m
 Encoding and decoding o5m/xml OSM map format in C++
 
+	git clone https://github.com/TimSC/cppo5m.git --recursive
+
+Example:
+
 	#include "OsmData.h"
 	#include <fstream>
 	#include <iostream>
