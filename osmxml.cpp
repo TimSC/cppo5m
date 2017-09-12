@@ -218,7 +218,7 @@ void OsmXmlDecode::DecodeMetaData(class MetaData &metaData)
 	if(it != this->metadataMap.end())
 	{
 		struct tm dt;
-		ParseIso8601Datetime(it->second.c_str(), dt);
+		ParseIso8601Datetime(it->second.c_str(), dt, false);
 		time_t ts = mktime (&dt);
 		metaData.timestamp = (int64_t)ts;
 	}
