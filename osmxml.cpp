@@ -39,13 +39,15 @@ static void EndElement(void *userData, const XML_Char *name)
 // ************* Decoder *************
 
 OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
-	handle(&handleIn)
+	handle(&handleIn),
+	output(NULL)
 {
 	xmlDepth = 0;
 	parseCompletedOk = false;
 	parser = XML_ParserCreate(NULL);
 	XML_SetUserData(parser, this);
 	XML_SetElementHandler(parser, ::StartElement, ::EndElement);
+	this->firstParseCall = true;
 }
 
 OsmXmlDecode::~OsmXmlDecode()
@@ -55,6 +57,15 @@ OsmXmlDecode::~OsmXmlDecode()
 
 bool OsmXmlDecode::DecodeNext()
 {
+	if(output == NULL)
+		throw runtime_error("OsmXmlDecode output pointer is null");
+	
+	if(this->firstParseCall)
+	{
+		output->StoreIsDiff(false);
+		this->firstParseCall = false;
+	}
+
 	handle.read((char *)decodeBuff, sizeof(decodeBuff));
 
 	bool done = handle.gcount()==0;
@@ -67,7 +78,10 @@ bool OsmXmlDecode::DecodeNext()
 		return false;
 	}
 	if(done)
+	{
+		output->Finish();
 		parseCompletedOk = true;
+	}
 	return !done;
 }
 
@@ -126,8 +140,62 @@ void OsmXmlDecode::EndElement(const XML_Char *name)
 		for(TagMap::iterator it=this->tags.begin(); it!=this->tags.end(); it++)
 			cout << "tags " << it->first << "," << it->second << endl;
 	
-		class MetaData metaData;
-		DecodeMetaData(metaData);
+		if(this->currentObjectType == "bounds")
+		{
+			double minlat=0.0, minlon=0.0, maxlat=0.0, maxlon=0.0;
+
+			TagMap::iterator it = this->metadataMap.find("minlat");
+			if(it != this->metadataMap.end())
+				minlat = atof(it->second.c_str());
+			it = this->metadataMap.find("minlon");
+			if(it != this->metadataMap.end())
+				minlon = atof(it->second.c_str());
+			it = this->metadataMap.find("maxlat");
+			if(it != this->metadataMap.end())
+				maxlat = atof(it->second.c_str());
+			it = this->metadataMap.find("maxlon");
+			if(it != this->metadataMap.end())
+				maxlon = atof(it->second.c_str());
+
+			output->StoreBounds(minlon, minlat, maxlon, maxlat);
+		}
+		else
+		{
+			if(this->lastObjectType != this->currentObjectType)
+				output->Sync();
+
+			int64_t objId = 0;
+			TagMap::iterator it = this->metadataMap.find("id");
+			if(it != this->metadataMap.end())
+				objId = atoi(it->second.c_str());
+
+			class MetaData metaData;
+			DecodeMetaData(metaData);
+
+			if(this->currentObjectType == "node")
+			{
+				double lat = 0.0, lon = 0.0;
+				it = this->metadataMap.find("lat");
+				if(it != this->metadataMap.end())
+					lat = atof(it->second.c_str());
+				it = this->metadataMap.find("lon");
+				if(it != this->metadataMap.end())
+					lon = atof(it->second.c_str());
+
+				output->StoreNode(objId, metaData, this->tags, lat, lon);
+			}
+			else if(this->currentObjectType == "way")
+			{
+				output->StoreWay(objId, metaData, this->tags, this->memObjIds);
+			}
+			else if(this->currentObjectType == "relation")
+			{
+				output->StoreRelation(objId, metaData, this->tags, 
+					this->memObjTypes, this->memObjIds, this->memObjRoles);
+			}
+
+			this->lastObjectType = this->currentObjectType;
+		}
 
 		//Clear data ready for further processing
 		this->currentObjectType = "";
@@ -160,7 +228,7 @@ void OsmXmlDecode::DecodeMetaData(class MetaData &metaData)
 	it = this->metadataMap.find("uid");
 	if(it != this->metadataMap.end())
 		metaData.uid = atoi(it->second.c_str());
-	it = this->metadataMap.find("username");
+	it = this->metadataMap.find("user");
 	if(it != this->metadataMap.end())
 		metaData.username = it->second;
 	it = this->metadataMap.find("visible");

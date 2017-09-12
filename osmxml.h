@@ -15,10 +15,11 @@ protected:
 	char decodeBuff[10*1024];
 	XML_Parser parser;
 	int xmlDepth;
-	std::string currentObjectType;
+	std::string currentObjectType, lastObjectType;
 	TagMap metadataMap, tags;
 	std::vector<int64_t> memObjIds;
 	std::vector<std::string> memObjTypes, memObjRoles;
+	bool firstParseCall;
 
 	void DecodeMetaData(class MetaData &metaData);
 
