@@ -8,8 +8,8 @@ int main()
 {
 	class OsmData osmData;
 	std::filebuf infi;
-	infi.open("example.o5m", std::ios::in);
-	osmData.LoadFromO5m(infi);
+	infi.open("example.osm", std::ios::in);
+	osmData.LoadFromOsmXml(infi);
 	cout << "nodes " << osmData.nodes.size() << endl;
 	cout << "ways " << osmData.ways.size() << endl;
 	cout << "relations " << osmData.relations.size() << endl;

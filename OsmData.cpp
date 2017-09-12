@@ -113,7 +113,25 @@ void OsmData::LoadFromO5m(std::streambuf &fi)
 
 	while (fi.in_avail()>0)
 	{
-		dec.DecodeNext();
+		bool ok = dec.DecodeNext();
+		if(!ok) break;
+	}
+}
+
+void OsmData::LoadFromOsmXml(std::streambuf &fi)
+{
+	class OsmXmlDecode dec(fi);
+	dec.output = this;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok)
+		{
+			cout << dec.errString << endl;
+			break;
+		}
 	}
 }
 

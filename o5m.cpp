@@ -143,24 +143,24 @@ bool O5mDecode::DecodeNext()
 	{
 	case 0x10:
 		this->DecodeNode();
-		return false;
+		return true;
 		break;
 	case 0x11:
 		this->DecodeWay();
-		return false;
+		return true;
 		break;
 	case 0x12:
 		this->DecodeRelation();
-		return false;
+		return true;
 		break;
 	case 0xdb:
 		this->DecodeBoundingBox();
-		return false;
+		return true;
 		break;
 	case 0xff:
 		//Used in delta encoding information
 		this->ResetDeltaCoding();
-		return false; //Reset code
+		return true; //Reset code
 		break;
 	case 0xfe:
 		return true; //End of file
@@ -173,7 +173,7 @@ bool O5mDecode::DecodeNext()
 	uint64_t length = DecodeVarint(this->handle);
 	tmpBuff.resize(length);
 	ReadExactLength(this->handle, &tmpBuff[0], length);
-	return false;
+	return true;
 }
 
 void O5mDecode::DecodeHeader()

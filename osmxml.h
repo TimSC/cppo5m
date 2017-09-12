@@ -2,9 +2,41 @@
 #define _OSMXML_H
 
 #include "o5m.h"
+#include <expat.h>
 #ifdef PYTHON_AWARE
 #include <Python.h>
 #endif
+
+///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
+class OsmXmlDecode
+{
+protected:
+	std::istream handle;
+	char decodeBuff[10*1024];
+	XML_Parser parser;
+	int xmlDepth;
+	std::string currentObjectType;
+	TagMap metadataMap, tags;
+	std::vector<int64_t> memObjIds;
+	std::vector<std::string> memObjTypes, memObjRoles;
+
+	void DecodeMetaData(class MetaData &metaData);
+
+public:
+	class IDataStreamHandler *output;
+	std::string errString;
+	bool parseCompletedOk;
+
+	OsmXmlDecode(std::streambuf &handleIn);
+	virtual ~OsmXmlDecode();
+
+	bool DecodeNext();
+	void DecodeHeader();
+
+	void StartElement(const XML_Char *name, const XML_Char **atts);
+	void EndElement(const XML_Char *name);
+
+};
 
 class OsmXmlEncodeBase : public IDataStreamHandler
 {

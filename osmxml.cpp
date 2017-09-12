@@ -1,6 +1,9 @@
 #include "osmxml.h"
 #include <sstream>
 #include <ctime>
+#include <assert.h>
+#include <cstring>
+#include "iso8601.h"
 using namespace std;
 
 // ********* Utility classes ***********
@@ -21,6 +24,148 @@ std::string escapexml(const std::string& src) {
 		}
 	}
 	return dst.str();
+}
+
+static void StartElement(void *userData, const XML_Char *name, const XML_Char **atts)
+{
+	((class OsmXmlDecode *)userData)->StartElement(name, atts);
+}
+
+static void EndElement(void *userData, const XML_Char *name)
+{
+	((class OsmXmlDecode *)userData)->EndElement(name);
+}
+
+// ************* Decoder *************
+
+OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
+	handle(&handleIn)
+{
+	xmlDepth = 0;
+	parseCompletedOk = false;
+	parser = XML_ParserCreate(NULL);
+	XML_SetUserData(parser, this);
+	XML_SetElementHandler(parser, ::StartElement, ::EndElement);
+}
+
+OsmXmlDecode::~OsmXmlDecode()
+{
+	XML_ParserFree(parser);
+}
+
+bool OsmXmlDecode::DecodeNext()
+{
+	handle.read((char *)decodeBuff, sizeof(decodeBuff));
+
+	bool done = handle.gcount()==0;
+	if (XML_Parse(parser, decodeBuff, handle.gcount(), done) == XML_STATUS_ERROR)
+	{
+		stringstream ss;
+		ss << XML_ErrorString(XML_GetErrorCode(parser))
+			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
+		errString = ss.str();
+		return false;
+	}
+	if(done)
+		parseCompletedOk = true;
+	return !done;
+}
+
+void OsmXmlDecode::DecodeHeader()
+{
+
+}
+
+void OsmXmlDecode::StartElement(const XML_Char *name, const XML_Char **atts)
+{
+	this->xmlDepth ++;
+	//cout << this->xmlDepth << " startel " << name << endl;
+
+	std::map<std::string, std::string> attribs;
+	size_t i=0;
+	while(atts[i] != NULL)
+	{
+		attribs[atts[i]] = atts[i+1];
+		i += 2;
+	}
+
+	if(this->xmlDepth == 2)
+	{
+		this->currentObjectType = name;
+		this->metadataMap = attribs;
+	}
+
+	else if(this->xmlDepth == 3)
+	{
+		if(strcmp(name, "tag") == 0)
+		{
+			this->tags[attribs["k"]] = attribs["v"];
+		}
+		if(strcmp(name, "nd") == 0 && currentObjectType == "way")
+		{
+			this->memObjIds.push_back(atoi(attribs["ref"].c_str()));
+		}
+		if(strcmp(name, "member") == 0 && currentObjectType == "relation")
+		{
+			this->memObjIds.push_back(atoi(attribs["ref"].c_str()));
+			this->memObjTypes.push_back(attribs["type"]);
+			this->memObjRoles.push_back(attribs["role"]);
+		}
+	}
+}
+
+void OsmXmlDecode::EndElement(const XML_Char *name)
+{
+	//cout << this->xmlDepth << " endel " << name << endl;
+	
+	if(this->xmlDepth == 2)
+	{
+		cout << currentObjectType << endl;
+		for(TagMap::iterator it=this->metadataMap.begin(); it!=this->metadataMap.end(); it++)
+			cout << it->first << "," << it->second << endl;
+		for(TagMap::iterator it=this->tags.begin(); it!=this->tags.end(); it++)
+			cout << "tags " << it->first << "," << it->second << endl;
+	
+		class MetaData metaData;
+		DecodeMetaData(metaData);
+
+		//Clear data ready for further processing
+		this->currentObjectType = "";
+		this->metadataMap.clear();
+		this->tags.clear();
+		this->memObjIds.clear();
+		this->memObjTypes.clear();
+		this->memObjRoles.clear();
+	}
+
+	this->xmlDepth --;
+}
+
+void OsmXmlDecode::DecodeMetaData(class MetaData &metaData)
+{
+	TagMap::iterator it = this->metadataMap.find("version");
+	if(it != this->metadataMap.end())
+		metaData.version = atoi(it->second.c_str());
+	it = this->metadataMap.find("timestamp");
+	if(it != this->metadataMap.end())
+	{
+		struct tm dt;
+		parse_iso8601_datetime(it->second.c_str(), dt);
+		time_t ts = mktime (&dt);
+		metaData.timestamp = (int64_t)ts;
+	}
+	it = this->metadataMap.find("changeset");
+	if(it != this->metadataMap.end())
+		metaData.changeset = atoi(it->second.c_str());
+	it = this->metadataMap.find("uid");
+	if(it != this->metadataMap.end())
+		metaData.uid = atoi(it->second.c_str());
+	it = this->metadataMap.find("username");
+	if(it != this->metadataMap.end())
+		metaData.username = it->second;
+	it = this->metadataMap.find("visible");
+	if(it != this->metadataMap.end())
+		metaData.visible = it->second != "false"; 
 }
 
 // ************* Encoder *************

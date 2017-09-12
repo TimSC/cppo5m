@@ -66,6 +66,7 @@ public:
 	OsmData& operator=(const OsmData &arg);
 	virtual ~OsmData();
 	void LoadFromO5m(std::streambuf &fi);
+	void LoadFromOsmXml(std::streambuf &fi);
 	void SaveToO5m(std::streambuf &fi);
 	void SaveToOsmXml(std::streambuf &fi);
 	void StreamTo(class IDataStreamHandler &out, bool finishStream = true);
