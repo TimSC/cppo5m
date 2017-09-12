@@ -8,11 +8,9 @@
 #endif
 
 ///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
-class OsmXmlDecode
+class OsmXmlDecodeString
 {
 protected:
-	std::istream handle;
-	char decodeBuff[10*1024];
 	XML_Parser parser;
 	int xmlDepth;
 	std::string currentObjectType, lastObjectType;
@@ -28,15 +26,30 @@ public:
 	std::string errString;
 	bool parseCompletedOk;
 
+	OsmXmlDecodeString();
+	virtual ~OsmXmlDecodeString();
+
+	virtual bool DecodeNext() {return false;};
+	virtual void DecodeHeader() {};
+	bool DecodeSubString(const char *xml, size_t len, bool done);
+
+	void StartElement(const XML_Char *name, const XML_Char **atts);
+	void EndElement(const XML_Char *name);
+};
+
+/// This handles data from a std::streambuf input.
+class OsmXmlDecode : public OsmXmlDecodeString
+{
+private:
+	char decodeBuff[10*1024];
+	std::istream handle;
+
+public:
 	OsmXmlDecode(std::streambuf &handleIn);
 	virtual ~OsmXmlDecode();
 
 	bool DecodeNext();
 	void DecodeHeader();
-
-	void StartElement(const XML_Char *name, const XML_Char **atts);
-	void EndElement(const XML_Char *name);
-
 };
 
 class OsmXmlEncodeBase : public IDataStreamHandler

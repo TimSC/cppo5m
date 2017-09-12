@@ -38,8 +38,7 @@ static void EndElement(void *userData, const XML_Char *name)
 
 // ************* Decoder *************
 
-OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
-	handle(&handleIn),
+OsmXmlDecodeString::OsmXmlDecodeString():
 	output(NULL)
 {
 	xmlDepth = 0;
@@ -50,47 +49,12 @@ OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
 	this->firstParseCall = true;
 }
 
-OsmXmlDecode::~OsmXmlDecode()
+OsmXmlDecodeString::~OsmXmlDecodeString()
 {
 	XML_ParserFree(parser);
 }
 
-bool OsmXmlDecode::DecodeNext()
-{
-	if(output == NULL)
-		throw runtime_error("OsmXmlDecode output pointer is null");
-	
-	if(this->firstParseCall)
-	{
-		output->StoreIsDiff(false);
-		this->firstParseCall = false;
-	}
-
-	handle.read((char *)decodeBuff, sizeof(decodeBuff));
-
-	bool done = handle.gcount()==0;
-	if (XML_Parse(parser, decodeBuff, handle.gcount(), done) == XML_STATUS_ERROR)
-	{
-		stringstream ss;
-		ss << XML_ErrorString(XML_GetErrorCode(parser))
-			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
-		errString = ss.str();
-		return false;
-	}
-	if(done)
-	{
-		output->Finish();
-		parseCompletedOk = true;
-	}
-	return !done;
-}
-
-void OsmXmlDecode::DecodeHeader()
-{
-
-}
-
-void OsmXmlDecode::StartElement(const XML_Char *name, const XML_Char **atts)
+void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
 {
 	this->xmlDepth ++;
 	//cout << this->xmlDepth << " startel " << name << endl;
@@ -128,18 +92,12 @@ void OsmXmlDecode::StartElement(const XML_Char *name, const XML_Char **atts)
 	}
 }
 
-void OsmXmlDecode::EndElement(const XML_Char *name)
+void OsmXmlDecodeString::EndElement(const XML_Char *name)
 {
 	//cout << this->xmlDepth << " endel " << name << endl;
 	
 	if(this->xmlDepth == 2)
-	{
-		cout << currentObjectType << endl;
-		for(TagMap::iterator it=this->metadataMap.begin(); it!=this->metadataMap.end(); it++)
-			cout << it->first << "," << it->second << endl;
-		for(TagMap::iterator it=this->tags.begin(); it!=this->tags.end(); it++)
-			cout << "tags " << it->first << "," << it->second << endl;
-	
+	{	
 		if(this->currentObjectType == "bounds")
 		{
 			double minlat=0.0, minlon=0.0, maxlat=0.0, maxlon=0.0;
@@ -209,7 +167,7 @@ void OsmXmlDecode::EndElement(const XML_Char *name)
 	this->xmlDepth --;
 }
 
-void OsmXmlDecode::DecodeMetaData(class MetaData &metaData)
+void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 {
 	TagMap::iterator it = this->metadataMap.find("version");
 	if(it != this->metadataMap.end())
@@ -234,6 +192,60 @@ void OsmXmlDecode::DecodeMetaData(class MetaData &metaData)
 	it = this->metadataMap.find("visible");
 	if(it != this->metadataMap.end())
 		metaData.visible = it->second != "false"; 
+}
+
+bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
+{
+	if(output == NULL)
+		throw runtime_error("OsmXmlDecode output pointer is null");
+
+	if(this->firstParseCall)
+	{
+		output->StoreIsDiff(false);
+		this->firstParseCall = false;
+	}
+
+	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
+	{
+		stringstream ss;
+		ss << XML_ErrorString(XML_GetErrorCode(parser))
+			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
+		errString = ss.str();
+		return false;
+	}
+	if(done)
+	{
+		output->Finish();
+		parseCompletedOk = true;
+	}
+	return !done;
+}
+
+// ***********************************
+
+OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
+	OsmXmlDecodeString(),
+	handle(&handleIn)
+{
+
+}
+
+OsmXmlDecode::~OsmXmlDecode()
+{
+
+}
+
+bool OsmXmlDecode::DecodeNext()
+{
+	handle.read((char *)decodeBuff, sizeof(decodeBuff));
+
+	bool done = handle.gcount()==0;
+	return DecodeSubString(decodeBuff, handle.gcount(), done);
+}
+
+void OsmXmlDecode::DecodeHeader()
+{
+
 }
 
 // ************* Encoder *************
