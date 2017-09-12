@@ -169,6 +169,7 @@ bool parse_iso8601_time(const char *str, struct tm &tmout)
 		baseTime.assign(str, baseDateLen);
 	}
 
+	//Assume UTC if no timezone is specified
 	int tzh = 0, tzm = 0;
 	if(firstTzChar != NULL)
 	{
@@ -254,7 +255,7 @@ bool parse_iso8601_time(const char *str, struct tm &tmout)
 
 	cout << "baseTime '" << baseTime << "'," << bestScore << "," << bestFmt << endl;
 		
-	//Apply timezone
+	//Apply timezone to get UTC
 	tmout.tm_hour -= tzh;
 	tmout.tm_min -= tzm;
 
@@ -313,5 +314,4 @@ void Iso8601TestCases()
 	parse_iso8601_datetime("2010-02-18T16:23.33-0530", dt);
 	parse_iso8601_datetime("2010-02-18T16.23334444", dt);
 }
-
 

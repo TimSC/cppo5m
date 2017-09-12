@@ -1,5 +1,5 @@
 # cppo5m
-Encoding and decoding o5m map format in C++
+Encoding and decoding o5m/xml OSM map format in C++
 
 	#include "OsmData.h"
 	#include <fstream>
