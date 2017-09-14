@@ -80,11 +80,11 @@ void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **att
 		}
 		if(strcmp(name, "nd") == 0 && currentObjectType == "way")
 		{
-			this->memObjIds.push_back(atoi(attribs["ref"].c_str()));
+			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
 		}
 		if(strcmp(name, "member") == 0 && currentObjectType == "relation")
 		{
-			this->memObjIds.push_back(atoi(attribs["ref"].c_str()));
+			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
 			this->memObjTypes.push_back(attribs["type"]);
 			this->memObjRoles.push_back(attribs["role"]);
 		}
@@ -124,7 +124,7 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 			int64_t objId = 0;
 			TagMap::iterator it = this->metadataMap.find("id");
 			if(it != this->metadataMap.end())
-				objId = atoi(it->second.c_str());
+				objId = atol(it->second.c_str());
 
 			class MetaData metaData;
 			DecodeMetaData(metaData);
@@ -170,7 +170,7 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 {
 	TagMap::iterator it = this->metadataMap.find("version");
 	if(it != this->metadataMap.end())
-		metaData.version = atoi(it->second.c_str());
+		metaData.version = atol(it->second.c_str());
 	it = this->metadataMap.find("timestamp");
 	if(it != this->metadataMap.end())
 	{
@@ -181,10 +181,10 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 	}
 	it = this->metadataMap.find("changeset");
 	if(it != this->metadataMap.end())
-		metaData.changeset = atoi(it->second.c_str());
+		metaData.changeset = atol(it->second.c_str());
 	it = this->metadataMap.find("uid");
 	if(it != this->metadataMap.end())
-		metaData.uid = atoi(it->second.c_str());
+		metaData.uid = atol(it->second.c_str());
 	it = this->metadataMap.find("user");
 	if(it != this->metadataMap.end())
 		metaData.username = it->second;
