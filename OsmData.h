@@ -79,8 +79,8 @@ public:
 		const std::vector<std::string> &refRoles);
 };
 
-void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output);
-void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output);
+void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
+void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
 

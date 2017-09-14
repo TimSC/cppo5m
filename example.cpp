@@ -6,10 +6,9 @@ using namespace std;
 int main()
 {
 	shared_ptr<class OsmData> osmData(new class OsmData());
-	shared_ptr<class IDataStreamHandler> parentType(osmData);
 	std::filebuf infi;
 	infi.open("o5mtest.o5m", std::ios::in);
-	LoadFromO5m(infi, parentType);
+	LoadFromO5m(infi, osmData);
 	cout << "nodes " << osmData->nodes.size() << endl;
 	cout << "ways " << osmData->ways.size() << endl;
 	cout << "relations " << osmData->relations.size() << endl;

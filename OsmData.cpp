@@ -206,7 +206,7 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 
 // ******* Utility funcs **********
 
-void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output)
+void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class O5mDecode dec(fi);
 	dec.output = output;
@@ -219,7 +219,7 @@ void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &
 	}
 }
 
-void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output)
+void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class OsmXmlDecode dec(fi);
 	dec.output = output;

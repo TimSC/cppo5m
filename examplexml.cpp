@@ -7,10 +7,9 @@ using namespace std;
 int main()
 {
 	shared_ptr<class OsmData> osmData(new class OsmData());
-	shared_ptr<class IDataStreamHandler> parentType(osmData);
 	std::filebuf infi;
 	infi.open("example.osm", std::ios::in);
-	LoadFromOsmXml(infi, parentType);
+	LoadFromOsmXml(infi, osmData);
 	cout << "nodes " << osmData->nodes.size() << endl;
 	cout << "ways " << osmData->ways.size() << endl;
 	cout << "relations " << osmData->relations.size() << endl;
