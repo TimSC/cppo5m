@@ -408,9 +408,10 @@ OsmXmlEncode::~OsmXmlEncode()
 #ifdef PYTHON_AWARE
 PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj): OsmXmlEncodeBase()
 {
-	m_PyObj = obj;
-	Py_INCREF(m_PyObj);
-	m_Write = PyObject_GetAttrString(m_PyObj, "write");
+	m_Write = NULL;
+	m_PyObj = NULL;
+
+	this->SetOutput(obj);
 	this->WriteStart();
 }
 
@@ -418,6 +419,39 @@ PyOsmXmlEncode::~PyOsmXmlEncode()
 {
 	Py_XDECREF(m_Write);
 	Py_XDECREF(m_PyObj);
+}
+
+void PyOsmXmlEncode::write (const char* s, streamsize n)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+	#endif 
+	Py_XDECREF(ret);
+}
+
+void PyOsmXmlEncode::operator<< (const string &val)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+	#endif 
+	Py_XDECREF(ret);
+}
+
+void PyOsmXmlEncode::SetOutput(PyObject* obj)
+{
+	Py_XDECREF(m_Write);
+	Py_XDECREF(m_PyObj);
+	m_PyObj = obj;
+	m_Write = PyObject_GetAttrString(obj, "write");
+	Py_INCREF(m_PyObj);
 }
 
 #endif //PYTHON_AWARE
