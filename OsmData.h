@@ -65,11 +65,7 @@ public:
 	OsmData( const OsmData &obj);
 	OsmData& operator=(const OsmData &arg);
 	virtual ~OsmData();
-	void LoadFromO5m(std::streambuf &fi);
-	void LoadFromOsmXml(std::streambuf &fi);
-	void SaveToO5m(std::streambuf &fi);
-	void SaveToOsmXml(std::streambuf &fi);
-	void StreamTo(class IDataStreamHandler &out, bool finishStream = true);
+	void StreamTo(class IDataStreamHandler &out, bool finishStream = true) const;
 	void Clear();
 
 	void StoreIsDiff(bool);
@@ -82,6 +78,11 @@ public:
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles);
 };
+
+void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output);
+void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output);
+void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
+void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
 
 #endif //_OSMDATA_H
 

@@ -6,15 +6,16 @@ using namespace std;
 
 int main()
 {
-	class OsmData osmData;
+	shared_ptr<class OsmData> osmData(new class OsmData());
+	shared_ptr<class IDataStreamHandler> parentType(osmData);
 	std::filebuf infi;
 	infi.open("example.osm", std::ios::in);
-	osmData.LoadFromOsmXml(infi);
-	cout << "nodes " << osmData.nodes.size() << endl;
-	cout << "ways " << osmData.ways.size() << endl;
-	cout << "relations " << osmData.relations.size() << endl;
+	LoadFromOsmXml(infi, parentType);
+	cout << "nodes " << osmData->nodes.size() << endl;
+	cout << "ways " << osmData->ways.size() << endl;
+	cout << "relations " << osmData->relations.size() << endl;
 	std::filebuf outfi;
 	outfi.open("example2.osm", std::ios::out);
-	osmData.SaveToOsmXml(outfi);
+	SaveToOsmXml(*osmData, outfi);
 	outfi.close();
 }

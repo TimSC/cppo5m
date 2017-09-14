@@ -8,6 +8,7 @@
 #include "fixeddeque.h"
 #include <map>
 #include <iostream>
+#include <memory>
 #ifdef PYTHON_AWARE
 #include <Python.h>
 #endif
@@ -80,7 +81,7 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 
-	class IDataStreamHandler *output;
+	shared_ptr<class IDataStreamHandler> output;
 };
 
 ///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.

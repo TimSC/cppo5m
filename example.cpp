@@ -5,15 +5,16 @@ using namespace std;
 
 int main()
 {
-	class OsmData osmData;
+	shared_ptr<class OsmData> osmData(new class OsmData());
+	shared_ptr<class IDataStreamHandler> parentType(osmData);
 	std::filebuf infi;
 	infi.open("o5mtest.o5m", std::ios::in);
-	osmData.LoadFromO5m(infi);
-	cout << "nodes " << osmData.nodes.size() << endl;
-	cout << "ways " << osmData.ways.size() << endl;
-	cout << "relations " << osmData.relations.size() << endl;
+	LoadFromO5m(infi, parentType);
+	cout << "nodes " << osmData->nodes.size() << endl;
+	cout << "ways " << osmData->ways.size() << endl;
+	cout << "relations " << osmData->relations.size() << endl;
 	std::filebuf outfi;
 	outfi.open("o5mtest2.o5m", std::ios::out);
-	osmData.SaveToO5m(outfi);
+	SaveToO5m(*osmData, outfi);
 	outfi.close();
 }

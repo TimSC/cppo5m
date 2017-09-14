@@ -1,6 +1,7 @@
 #ifndef _OSMXML_H
 #define _OSMXML_H
 
+#include <memory>
 #include "o5m.h"
 #include <expat.h>
 #ifdef PYTHON_AWARE
@@ -22,7 +23,7 @@ protected:
 	void DecodeMetaData(class MetaData &metaData);
 
 public:
-	class IDataStreamHandler *output;
+	std::shared_ptr<class IDataStreamHandler> output;
 	std::string errString;
 	bool parseCompletedOk;
 

@@ -105,72 +105,30 @@ OsmData& OsmData::operator=(const OsmData &obj)
 	return *this;
 }
 
-void OsmData::LoadFromO5m(std::streambuf &fi)
-{
-	class O5mDecode dec(fi);
-	dec.output = this;
-	dec.DecodeHeader();
-
-	while (fi.in_avail()>0)
-	{
-		bool ok = dec.DecodeNext();
-		if(!ok) break;
-	}
-}
-
-void OsmData::LoadFromOsmXml(std::streambuf &fi)
-{
-	class OsmXmlDecode dec(fi);
-	dec.output = this;
-	dec.DecodeHeader();
-
-	while (fi.in_avail()>0)
-	{
-		bool ok = dec.DecodeNext();
-		if(!ok)
-		{
-			cout << dec.errString << endl;
-			break;
-		}
-	}
-}
-
-void OsmData::SaveToO5m(std::streambuf &fi)
-{
-	class O5mEncode enc(fi);
-	this->StreamTo(enc);
-}
-
-void OsmData::SaveToOsmXml(std::streambuf &fi)
-{
-	class OsmXmlEncode enc(fi);
-	this->StreamTo(enc);
-}
-
-void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream)
+void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream) const
 {
 	enc.StoreIsDiff(this->isDiff);
 	for(size_t i=0;i< this->bounds.size(); i++) {
-		std::vector<double> &bbox = this->bounds[i];
+		const std::vector<double> &bbox = this->bounds[i];
 		enc.StoreBounds(bbox[0], bbox[1], bbox[2], bbox[3]);
 	}
 	for(size_t i=0; i < this->nodes.size(); i++)
 	{
-		class OsmNode &node = this->nodes[i];
+		const class OsmNode &node = this->nodes[i];
 		enc.StoreNode(node.objId, node.metaData, 
 			node.tags, node.lat, node.lon);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->ways.size(); i++)
 	{
-		class OsmWay &way = this->ways[i];
+		const class OsmWay &way = this->ways[i];
 		enc.StoreWay(way.objId, way.metaData, 
 			way.tags, way.refs);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->relations.size(); i++)
 	{
-		class OsmRelation &relation = this->relations[i];
+		const class OsmRelation &relation = this->relations[i];
 		enc.StoreRelation(relation.objId, relation.metaData, relation.tags, 
 			relation.refTypeStrs, relation.refIds, 
 			relation.refRoles);
@@ -244,5 +202,49 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 
 	this->relations.push_back(osmRelation);
 
+}
+
+// ******* Utility funcs **********
+
+void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output)
+{
+	class O5mDecode dec(fi);
+	dec.output = output;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok) break;
+	}
+}
+
+void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> &output)
+{
+	class OsmXmlDecode dec(fi);
+	dec.output = output;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok)
+		{
+			cout << dec.errString << endl;
+			break;
+		}
+	}
+}
+
+void SaveToO5m(const class OsmData &osmData, std::streambuf &fi)
+{
+	class O5mEncode enc(fi);
+	osmData.StreamTo(enc);
+}
+
+void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi)
+{
+	class OsmXmlEncode enc(fi);
+	osmData.StreamTo(enc);
 }
 
