@@ -6,12 +6,22 @@
 
 // ****** generic osm data store ******
 
-class OsmNode
+class OsmObject
 {
 public:
 	int64_t objId;
 	class MetaData metaData;
 	TagMap tags; 
+
+	OsmObject();
+	virtual ~OsmObject();
+	OsmObject( const OsmObject &obj);
+	OsmObject& operator=(const OsmObject &arg);
+};
+
+class OsmNode : public OsmObject
+{
+public:
 	double lat;
 	double lon;
 
@@ -21,12 +31,9 @@ public:
 	OsmNode& operator=(const OsmNode &arg);
 };
 
-class OsmWay
+class OsmWay : public OsmObject
 {
 public:
-	int64_t objId;
-	class MetaData metaData;
-	TagMap tags; 
 	std::vector<int64_t> refs;
 
 	OsmWay();
@@ -35,12 +42,9 @@ public:
 	OsmWay& operator=(const OsmWay &arg);
 };
 
-class OsmRelation
+class OsmRelation : public OsmObject
 {
 public:
-	int64_t objId;
-	class MetaData metaData;
-	TagMap tags; 
 	std::vector<std::string> refTypeStrs;
 	std::vector<int64_t> refIds;
 	std::vector<std::string> refRoles;

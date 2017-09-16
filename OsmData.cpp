@@ -1,9 +1,33 @@
 #include "OsmData.h"
 #include <iostream>
 
-OsmNode::OsmNode()
+OsmObject::OsmObject()
 {
 	objId = 0;
+}
+
+OsmObject::~OsmObject()
+{
+
+}
+
+OsmObject::OsmObject( const OsmObject &obj) : OsmObject()
+{
+	*this = obj;
+}
+
+OsmObject& OsmObject::operator=(const OsmObject &arg)
+{
+	objId = arg.objId;
+	metaData = arg.metaData;
+	tags = arg.tags; 
+	return *this;
+}
+
+// ***********************************
+
+OsmNode::OsmNode() : OsmObject()
+{
 	lat = 0.0;
 	lon = 0.0;
 }
@@ -20,17 +44,15 @@ OsmNode::OsmNode( const OsmNode &obj)
 
 OsmNode& OsmNode::operator=(const OsmNode &arg)
 {
-	objId = arg.objId;
-	metaData = arg.metaData;
-	tags = arg.tags; 
+	OsmObject::operator=(arg);
 	lat = arg.lat;
 	lon = arg.lon;
 	return *this;
 }
 
-OsmWay::OsmWay()
+OsmWay::OsmWay() : OsmObject()
 {
-	objId = 0;
+
 }
 
 OsmWay::~OsmWay()
@@ -38,23 +60,21 @@ OsmWay::~OsmWay()
 
 }
 
-OsmWay::OsmWay( const OsmWay &obj)
+OsmWay::OsmWay( const OsmWay &obj) : OsmObject()
 {
 	*this = obj;
 }
 
 OsmWay& OsmWay::operator=(const OsmWay &arg)
 {
-	objId = arg.objId;
-	metaData = arg.metaData;
-	tags = arg.tags; 
+	OsmObject::operator=(arg);
 	refs = arg.refs;
 	return *this;
 }
 
-OsmRelation::OsmRelation()
+OsmRelation::OsmRelation() : OsmObject()
 {
-	objId = 0;
+
 }
 
 OsmRelation::~OsmRelation()
@@ -62,16 +82,14 @@ OsmRelation::~OsmRelation()
 
 }
 
-OsmRelation::OsmRelation( const OsmRelation &obj)
+OsmRelation::OsmRelation( const OsmRelation &obj) : OsmObject()
 {
 	*this = obj;
 }
 
 OsmRelation& OsmRelation::operator=(const OsmRelation &arg)
 {
-	objId = arg.objId;
-	metaData = arg.metaData;
-	tags = arg.tags; 
+	OsmObject::operator=(arg);
 	refTypeStrs = arg.refTypeStrs;
 	refIds = arg.refIds;
 	refRoles = arg.refRoles;
