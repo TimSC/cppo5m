@@ -370,6 +370,9 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds,
 	const std::vector<std::string> &refRoles)
 {
+	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
+		throw std::invalid_argument("Length of ref vectors must be equal");
+
 	stringstream ss;
 	ss << "  <relation id='"<<objId<<"'";
 	this->EncodeMetaData(metaData, ss);

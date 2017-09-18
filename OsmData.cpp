@@ -89,6 +89,9 @@ OsmRelation::OsmRelation( const OsmRelation &obj) : OsmObject()
 
 OsmRelation& OsmRelation::operator=(const OsmRelation &arg)
 {
+	if(arg.refTypeStrs.size() != arg.refIds.size() || arg.refTypeStrs.size() != arg.refRoles.size())
+		throw std::invalid_argument("Length of ref vectors must be equal for RHS relation");
+
 	OsmObject::operator=(arg);
 	refTypeStrs = arg.refTypeStrs;
 	refIds = arg.refIds;
