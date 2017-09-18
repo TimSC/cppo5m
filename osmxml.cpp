@@ -384,7 +384,7 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 
 		//Write node IDs
 		for(size_t i=0; i<refTypeStrs.size(); i++)
-			ss << "    <member type='"<<refTypeStrs[i]<<"' ref='"<<refIds[i]<<"' role='"<<escapexml(refRoles[i])<<"' />" << endl;
+			ss << "    <member type='"<<escapexml(refTypeStrs[i])<<"' ref='"<<refIds[i]<<"' role='"<<escapexml(refRoles[i])<<"' />" << endl;
 
 		//Write tags
 		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
