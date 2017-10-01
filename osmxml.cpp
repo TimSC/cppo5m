@@ -36,6 +36,16 @@ static void EndElement(void *userData, const XML_Char *name)
 	((class OsmXmlDecode *)userData)->EndElement(name);
 }
 
+static void StartChangeElement(void *userData, const XML_Char *name, const XML_Char **atts)
+{
+	((class OsmChangeXmlDecode *)userData)->StartElement(name, atts);
+}
+
+static void EndChangeElement(void *userData, const XML_Char *name)
+{
+	((class OsmChangeXmlDecode *)userData)->EndElement(name);
+}
+
 // ************* Decoder *************
 
 OsmXmlDecodeString::OsmXmlDecodeString()
@@ -457,4 +467,105 @@ void PyOsmXmlEncode::SetOutput(PyObject* obj)
 }
 
 #endif //PYTHON_AWARE
+
+// ************* Osm Change Decoder *************
+
+OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
+	decodeBuff(new class OsmData())
+{
+	xmlDepth = 0;
+	parseCompletedOk = false;
+	parser = XML_ParserCreate(NULL);
+	XML_SetUserData(parser, this);
+	XML_SetElementHandler(parser, ::StartChangeElement, ::EndChangeElement);
+	decodeBuff->StoreIsDiff(true);
+	osmDataDecoder.output = decodeBuff;
+}
+
+OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()
+{
+	XML_ParserFree(parser);
+}
+
+void OsmChangeXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
+{
+	this->xmlDepth ++;
+	//cout << this->xmlDepth << " startel " << name << endl;
+
+	if(this->xmlDepth == 2)
+	{
+		currentAction = name;
+	}
+	else if(this->xmlDepth > 2)
+	{
+		osmDataDecoder.xmlDepth = this->xmlDepth - 2;
+		osmDataDecoder.StartElement(name, atts);
+	}
+}
+
+void OsmChangeXmlDecodeString::EndElement(const XML_Char *name)
+{
+	//cout << this->xmlDepth << " endel " << name << endl;
+	
+	if(this->xmlDepth == 2)
+	{
+		output->StoreOsmData(currentAction, *decodeBuff);
+		decodeBuff->Clear();
+		currentAction = "";
+	}
+	else if(this->xmlDepth > 2)
+	{
+		osmDataDecoder.xmlDepth = this->xmlDepth - 1;
+		osmDataDecoder.EndElement(name);
+	}
+
+	this->xmlDepth --;
+}
+
+bool OsmChangeXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
+{
+	if(output == NULL)
+		throw runtime_error("OsmXmlDecode output pointer is null");
+
+	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
+	{
+		stringstream ss;
+		ss << XML_ErrorString(XML_GetErrorCode(parser))
+			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
+		errString = ss.str();
+		return false;
+	}
+	if(done)
+	{
+		decodeBuff->Finish();
+		parseCompletedOk = true;
+	}
+	return !done;
+}
+// ***********************************
+
+OsmChangeXmlDecode::OsmChangeXmlDecode(std::streambuf &handleIn):
+	OsmChangeXmlDecodeString(),
+	handle(&handleIn)
+{
+
+}
+
+OsmChangeXmlDecode::~OsmChangeXmlDecode()
+{
+
+}
+
+bool OsmChangeXmlDecode::DecodeNext()
+{
+	handle.read((char *)decodeBuff, sizeof(decodeBuff));
+
+	bool done = handle.gcount()==0;
+	return DecodeSubString(decodeBuff, handle.gcount(), done);
+}
+
+void OsmChangeXmlDecode::DecodeHeader()
+{
+
+}
 

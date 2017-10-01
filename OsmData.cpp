@@ -225,6 +225,36 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 
 }
 
+// *********************************
+
+OsmChange::OsmChange() : IOsmChangeBlock()
+{
+	
+}
+
+OsmChange::OsmChange( const OsmChange &obj) : IOsmChangeBlock()
+{
+	*this = obj;
+}
+
+OsmChange& OsmChange::operator=(const OsmChange &arg)
+{
+	this->blocks = arg.blocks;
+	this->actions = arg.actions;
+	return *this;
+}
+
+OsmChange::~OsmChange()
+{
+
+}
+
+void OsmChange::StoreOsmData(const std::string &action, const class OsmData &osmData)
+{
+	this->actions.push_back(action);
+	this->blocks.push_back(osmData);
+}
+
 // ******* Utility funcs **********
 
 void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
@@ -243,6 +273,23 @@ void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> o
 void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class OsmXmlDecode dec(fi);
+	dec.output = output;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok)
+		{
+			cout << dec.errString << endl;
+			break;
+		}
+	}
+}
+
+void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output)
+{
+	class OsmChangeXmlDecode dec(fi);
 	dec.output = output;
 	dec.DecodeHeader();
 

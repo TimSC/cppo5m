@@ -105,6 +105,14 @@ public:
 		const std::vector<std::string> &refRoles) {};
 };
 
+class IOsmChangeBlock
+{
+public:
+	virtual ~IOsmChangeBlock() {};
+
+	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData) {};
+};
+
 ///Encodes a stream of map objects into an o5m output binary stream
 class O5mEncodeBase : public IDataStreamHandler
 {

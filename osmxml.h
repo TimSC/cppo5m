@@ -3,6 +3,7 @@
 
 #include <memory>
 #include "o5m.h"
+#include "OsmData.h"
 #include <expat.h>
 #ifdef PYTHON_AWARE
 #include <Python.h>
@@ -11,6 +12,7 @@
 ///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
 class OsmXmlDecodeString
 {
+	friend class OsmChangeXmlDecodeString;
 protected:
 	XML_Parser parser;
 	int xmlDepth;
@@ -118,6 +120,45 @@ public:
 	void SetOutput(PyObject* obj);
 };
 #endif //PYTHON_AWARE
+
+///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
+class OsmChangeXmlDecodeString
+{
+protected:
+	XML_Parser parser;
+	int xmlDepth;
+	class OsmXmlDecodeString osmDataDecoder;
+	std::shared_ptr<class OsmData> decodeBuff;
+	std::string currentAction;
+	
+public:
+	std::string errString;
+	bool parseCompletedOk;
+	std::shared_ptr<class IOsmChangeBlock> output;
+
+	OsmChangeXmlDecodeString();
+	virtual ~OsmChangeXmlDecodeString();
+
+	bool DecodeSubString(const char *xml, size_t len, bool done);
+
+	void StartElement(const XML_Char *name, const XML_Char **atts);
+	void EndElement(const XML_Char *name);
+};
+
+/// This handles data from a std::streambuf input.
+class OsmChangeXmlDecode : public OsmChangeXmlDecodeString
+{
+private:
+	char decodeBuff[10*1024];
+	std::istream handle;
+
+public:
+	OsmChangeXmlDecode(std::streambuf &handleIn);
+	virtual ~OsmChangeXmlDecode();
+
+	bool DecodeNext();
+	void DecodeHeader();
+};
 
 #endif //_OSMXML_H
 
