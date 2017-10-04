@@ -130,7 +130,8 @@ protected:
 	class OsmXmlDecodeString osmDataDecoder;
 	std::shared_ptr<class OsmData> decodeBuff;
 	std::string currentAction;
-	
+	bool ifunused;	
+
 public:
 	std::string errString;
 	bool parseCompletedOk;

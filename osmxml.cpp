@@ -26,6 +26,16 @@ std::string escapexml(const std::string& src) {
 	return dst.str();
 }
 
+void XmlAttsToMap(const XML_Char **atts, std::map<std::string, std::string> &attribs)
+{
+	size_t i=0;
+	while(atts[i] != NULL)
+	{
+		attribs[atts[i]] = atts[i+1];
+		i += 2;
+	}
+}
+
 static void StartElement(void *userData, const XML_Char *name, const XML_Char **atts)
 {
 	((class OsmXmlDecode *)userData)->StartElement(name, atts);
@@ -69,12 +79,7 @@ void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **att
 	//cout << this->xmlDepth << " startel " << name << endl;
 
 	std::map<std::string, std::string> attribs;
-	size_t i=0;
-	while(atts[i] != NULL)
-	{
-		attribs[atts[i]] = atts[i+1];
-		i += 2;
-	}
+	XmlAttsToMap(atts, attribs);
 
 	if(this->xmlDepth == 2)
 	{
@@ -475,6 +480,7 @@ OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 {
 	xmlDepth = 0;
 	parseCompletedOk = false;
+	ifunused = false;
 	parser = XML_ParserCreate(NULL);
 	XML_SetUserData(parser, this);
 	XML_SetElementHandler(parser, ::StartChangeElement, ::EndChangeElement);
@@ -494,7 +500,12 @@ void OsmChangeXmlDecodeString::StartElement(const XML_Char *name, const XML_Char
 
 	if(this->xmlDepth == 2)
 	{
+		std::map<std::string, std::string> attribs;
+		XmlAttsToMap(atts, attribs);
+
 		currentAction = name;
+		std::map<std::string, std::string>::iterator it = attribs.find("if-unused");
+		this->ifunused = (it != attribs.end());
 	}
 	else if(this->xmlDepth > 2)
 	{
@@ -509,9 +520,10 @@ void OsmChangeXmlDecodeString::EndElement(const XML_Char *name)
 	
 	if(this->xmlDepth == 2)
 	{
-		output->StoreOsmData(currentAction, *decodeBuff);
+		output->StoreOsmData(currentAction, *decodeBuff, this->ifunused);
 		decodeBuff->Clear();
 		currentAction = "";
+		ifunused = false;
 	}
 	else if(this->xmlDepth > 2)
 	{

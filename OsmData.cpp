@@ -206,7 +206,6 @@ void OsmData::StoreWay(int64_t objId, const class MetaData &metaData,
 	osmWay.refs = refs;
 
 	this->ways.push_back(osmWay);
-
 }
 
 void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
@@ -222,7 +221,6 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 	osmRelation.refRoles = refRoles;
 
 	this->relations.push_back(osmRelation);
-
 }
 
 // *********************************
@@ -241,6 +239,7 @@ OsmChange& OsmChange::operator=(const OsmChange &arg)
 {
 	this->blocks = arg.blocks;
 	this->actions = arg.actions;
+	this->ifunused = arg.ifunused;
 	return *this;
 }
 
@@ -249,10 +248,11 @@ OsmChange::~OsmChange()
 
 }
 
-void OsmChange::StoreOsmData(const std::string &action, const class OsmData &osmData)
+void OsmChange::StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused)
 {
 	this->actions.push_back(action);
 	this->blocks.push_back(osmData);
+	this->ifunused.push_back(ifunused);
 }
 
 // ******* Utility funcs **********

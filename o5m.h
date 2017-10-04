@@ -110,7 +110,7 @@ class IOsmChangeBlock
 public:
 	virtual ~IOsmChangeBlock() {};
 
-	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData) {};
+	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused) {};
 };
 
 ///Encodes a stream of map objects into an o5m output binary stream

@@ -88,13 +88,14 @@ class OsmChange : public IOsmChangeBlock
 public:
 	std::vector<class OsmData> blocks;
 	std::vector<std::string> actions; 
+	std::vector<bool> ifunused;
 
 	OsmChange();
 	OsmChange( const OsmChange &obj);
 	OsmChange& operator=(const OsmChange &arg);
 	virtual ~OsmChange();
 
-	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData);
+	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused);
 };
 
 void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
