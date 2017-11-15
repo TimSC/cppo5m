@@ -206,6 +206,9 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 	it = this->metadataMap.find("visible");
 	if(it != this->metadataMap.end())
 		metaData.visible = it->second != "false"; 
+	it = this->metadataMap.find("current");
+	if(it != this->metadataMap.end())
+		metaData.current = it->second != "false";
 }
 
 bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)

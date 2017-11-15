@@ -57,6 +57,7 @@ MetaData::MetaData()
 	changeset=0;
 	uid=0;
 	visible=true;
+	current=true;
 }
 
 MetaData::~MetaData()
@@ -77,6 +78,7 @@ MetaData& MetaData::operator=(const MetaData &a)
 	uid = a.uid;
 	username = a.username;
 	visible = a.visible;
+	current = a.current;
 	return *this;
 }
 
