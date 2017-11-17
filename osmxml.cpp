@@ -584,3 +584,48 @@ void OsmChangeXmlDecode::DecodeHeader()
 
 }
 
+// *************************************
+
+OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn) : handle(&fiIn), OsmXmlEncodeBase()
+{
+
+}
+
+OsmChangeXmlEncode::~OsmChangeXmlEncode()
+{
+
+}
+
+void OsmChangeXmlEncode::Encode(const class OsmChange &osmChange)
+{
+	*this << "<osmChange version=\"0.6\" generator=\"cppo5m\">\n";
+	for(size_t i=0; i<osmChange.blocks.size(); i++)
+	{
+		const class OsmData &block = osmChange.blocks[i];
+		const std::string &action = osmChange.actions[i];
+		bool ifunusedval = osmChange.ifunused[i];
+
+		stringstream actionTagOpen;
+		actionTagOpen << "<" << action << ">" << endl;
+		*this << actionTagOpen.str();
+
+		block.StreamTo(*this, false);
+
+		stringstream actionTagClose;
+		actionTagClose << "</" << action << ">" << endl;
+		*this << actionTagClose.str();
+	}
+
+	*this << "</osmChange>\n";
+}
+
+void OsmChangeXmlEncode::write (const char* s, streamsize n)
+{
+	this->handle.write(s, n);
+}
+
+void OsmChangeXmlEncode::operator<< (const string &val)
+{
+	this->handle << val;
+}
+

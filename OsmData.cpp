@@ -167,6 +167,15 @@ void OsmData::Clear()
 	isDiff = false;
 }
 
+bool OsmData::IsEmpty()
+{
+	if(nodes.size()>0) return false;
+	if(ways.size()>0) return false;
+	if(relations.size()>0) return false;
+	if(bounds.size()>0) return false;
+	return true;
+}
+
 void OsmData::StoreIsDiff(bool d)
 {
 	this->isDiff = d;
@@ -314,5 +323,11 @@ void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi)
 {
 	class OsmXmlEncode enc(fi);
 	osmData.StreamTo(enc);
+}
+
+void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi)
+{
+	class OsmChangeXmlEncode enc(fi);
+	enc.Encode(osmChange);
 }
 

@@ -161,5 +161,20 @@ public:
 	void DecodeHeader();
 };
 
+class OsmChangeXmlEncode : public OsmXmlEncodeBase
+{
+private:
+	std::ostream handle;
+
+public:
+	OsmChangeXmlEncode(std::streambuf &fiIn);
+	virtual ~OsmChangeXmlEncode();
+
+	void Encode(const class OsmChange &osmChange);
+
+	virtual void write (const char* s, streamsize n);
+	virtual void operator<< (const string &val);
+};
+
 #endif //_OSMXML_H
 

@@ -71,6 +71,7 @@ public:
 	virtual ~OsmData();
 	void StreamTo(class IDataStreamHandler &out, bool finishStream = true) const;
 	void Clear();
+	bool IsEmpty();
 
 	void StoreIsDiff(bool);
 	void StoreBounds(double x1, double y1, double x2, double y2);
@@ -103,6 +104,7 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output);
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
+void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi);
 
 #endif //_OSMDATA_H
 
