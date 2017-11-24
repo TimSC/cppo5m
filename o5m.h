@@ -81,7 +81,7 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 
-	shared_ptr<class IDataStreamHandler> output;
+	std::shared_ptr<class IDataStreamHandler> output;
 };
 
 ///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.
