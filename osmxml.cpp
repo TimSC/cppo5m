@@ -3,7 +3,7 @@
 #include <ctime>
 #include <assert.h>
 #include <cstring>
-#include "cppiso8601/iso8601.h"
+#include "iso8601lib/iso8601.h"
 using namespace std;
 
 // ********* Utility classes ***********
@@ -190,7 +190,9 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 	if(it != this->metadataMap.end())
 	{
 		struct tm dt;
-		ParseIso8601Datetime(it->second.c_str(), dt, false);
+		int timezoneOffsetMin=0;
+		ParseIso8601Datetime(it->second.c_str(), dt, &timezoneOffsetMin);
+		TmToUtc(dt, timezoneOffsetMin);
 		time_t ts = mktime (&dt);
 		metaData.timestamp = (int64_t)ts;
 	}

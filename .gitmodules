@@ -1,3 +1,6 @@
 [submodule "cppiso8601"]
 	path = cppiso8601
 	url = https://github.com/TimSC/cppiso8601.git
+[submodule "iso8601lib"]
+	path = iso8601lib
+	url = https://github.com/TimSC/iso8601lib.git
