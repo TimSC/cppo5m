@@ -1,13 +1,19 @@
 
 all: example selftest dectest examplexml exampleosmchange
-selftest: o5m.cpp varint.cpp selftest.cpp
+
+%.co: %.c
+	gcc -Wall -c -o $@ $<
+%.o: %.cpp
+	g++ -Wall -c -std=c++11 -o $@ $<
+
+selftest: o5m.o varint.o selftest.o
 	g++ $^ -Wall -std=c++11 -o $@
-dectest: o5m.cpp varint.cpp dectest.cpp
+dectest: o5m.o varint.o dectest.o
 	g++ $^ -Wall -std=c++11 -o $@
-example: o5m.cpp varint.cpp OsmData.cpp osmxml.cpp example.cpp iso8601lib/iso8601.c
+example: o5m.o varint.o OsmData.o osmxml.o example.o iso8601lib/iso8601.co
 	g++ $^ -I/usr/include/libxml2 -lexpat -Wall -std=c++11 -o $@
-examplexml: o5m.cpp varint.cpp OsmData.cpp osmxml.cpp examplexml.cpp iso8601lib/iso8601.c
+examplexml: o5m.o varint.o OsmData.o osmxml.o examplexml.o iso8601lib/iso8601.co
 	g++ $^ -I/usr/include/libxml2 -lexpat -Wall -std=c++11 -o $@
-exampleosmchange: o5m.cpp varint.cpp OsmData.cpp osmxml.cpp exampleosmchange.cpp iso8601lib/iso8601.c
+exampleosmchange: o5m.o varint.o OsmData.o osmxml.o exampleosmchange.o iso8601lib/iso8601.co
 	g++ $^ -g -I/usr/include/libxml2 -lexpat -Wall -std=c++11 -o $@
 

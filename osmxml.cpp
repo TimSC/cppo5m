@@ -3,7 +3,9 @@
 #include <ctime>
 #include <assert.h>
 #include <cstring>
+extern "C" {
 #include "iso8601lib/iso8601.h"
+}
 using namespace std;
 
 // ********* Utility classes ***********
