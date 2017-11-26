@@ -191,8 +191,8 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 	{
 		struct tm dt;
 		int timezoneOffsetMin=0;
-		ParseIso8601Datetime(it->second.c_str(), dt, &timezoneOffsetMin);
-		TmToUtc(dt, timezoneOffsetMin);
+		ParseIso8601Datetime(it->second.c_str(), &dt, &timezoneOffsetMin);
+		TmToUtc(&dt, timezoneOffsetMin);
 		time_t ts = mktime (&dt);
 		metaData.timestamp = (int64_t)ts;
 	}
