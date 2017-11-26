@@ -2,9 +2,9 @@
 all: example selftest dectest examplexml exampleosmchange
 
 %.co: %.c
-	gcc -Wall -c -o $@ $<
+	gcc -fPIC -Wall -c -o $@ $<
 %.o: %.cpp
-	g++ -Wall -c -std=c++11 -o $@ $<
+	g++ -fPIC -Wall -c -std=c++11 -o $@ $<
 
 selftest: o5m.o varint.o selftest.o
 	g++ $^ -Wall -std=c++11 -o $@
