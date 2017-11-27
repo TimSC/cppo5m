@@ -1,6 +1,7 @@
 #ifndef _OSMDATA_H
 #define _OSMDATA_H
 
+#include <memory>
 #include "o5m.h"
 #include "osmxml.h"
 
