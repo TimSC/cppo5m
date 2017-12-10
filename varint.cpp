@@ -14,11 +14,14 @@ uint64_t DecodeVarint(std::istream &str)
 	size_t offset = 0;
 	uint64_t total = 0;
 	while (contin) {
-		char rawBuff = str.get();
+		int rawBuff = str.get();
+		if(rawBuff==std::char_traits<char>::eof())
+			throw std::runtime_error("End of file in DecodeVarint");
 		if(str.fail())
-			throw std::runtime_error("Read result has unexpected length");
+			throw std::runtime_error("DecodeVarint: read result has unexpected length");
 
-		uint64_t val = *(unsigned char *)(&rawBuff);
+		char valc = (char)rawBuff;
+		uint64_t val = *(unsigned char *)(&valc);
 		contin = (val & 0x80) != 0;
 		total += (val & 0x7f) << offset;
 		offset += 7;
@@ -40,11 +43,14 @@ int64_t DecodeZigzag(std::istream &str)
 	uint64_t offset = 0;
 	uint64_t total = 0;
 	while (contin) {
-		char rawBuff = str.get();
+		int rawBuff = str.get();
+		if(rawBuff==std::char_traits<char>::eof())
+			throw std::runtime_error("End of file in DecodeZigzag");
 		if(str.fail())
-			throw std::runtime_error("Read result has unexpected length");
+			throw std::runtime_error("DecodeZigzag read result has unexpected length");
 
-		uint64_t val = *(unsigned char *)(&rawBuff);
+		char valc = (char)rawBuff;
+		uint64_t val = *(unsigned char *)(&valc);
 		contin = (val & 0x80) != 0;
 		total += (val & 0x7f) << offset;
 		offset += 7;

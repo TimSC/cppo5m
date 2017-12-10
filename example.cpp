@@ -13,7 +13,14 @@ int main()
 	cout << "ways " << osmData->ways.size() << endl;
 	cout << "relations " << osmData->relations.size() << endl;
 	std::filebuf outfi;
-	outfi.open("o5mtest2.o5m", std::ios::out);
+	outfi.open("o5mtest2.o5m", std::ios::out | std::ios::binary);
 	SaveToO5m(*osmData, outfi);
 	outfi.close();
+	cout << "Written o5mtest2.o5m" << endl;
+
+	std::filebuf outfi2;
+	outfi.open("o5mtest2.osm", std::ios::out);
+	SaveToOsmXml(*osmData, outfi);
+	outfi.close();
+	cout << "Written o5mtest2.osm" << endl;
 }
