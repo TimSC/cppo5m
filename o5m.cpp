@@ -273,22 +273,7 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	{
 		//Found new pair of strings
 		this->DecodeSingleString(stream, firstStr);
-
-	//	try{
 		this->DecodeSingleString(stream, secondStr);
-/*		}
-		catch(runtime_error &err)
-		{
-			if(stream.eof())
-			{
-				//Used by osmconvert for null username and UID in metadata
-				firstStr = "";
-				secondStr = "";
-				return false;
-			}
-			throw err;
-		}
-	*/	
 		this->ConsiderAddToStringRefTable(firstStr, secondStr);
 	}
 	else
@@ -325,35 +310,10 @@ void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out
 			this->lastChangeSet += deltaChangeSet;
 			out.changeset = this->lastChangeSet;
 			//print "changeset", self.lastChangeSet, deltaChangeSet
-			uint64_t ref = DecodeVarint(nodeDataStream);
 
-			if(ref == 0x00)
-			{
-				//Found new pair of strings
-				this->DecodeSingleString(nodeDataStream, uidStr);
-				this->DecodeSingleString(nodeDataStream, out.username);
-				this->ConsiderAddToStringRefTable(uidStr, out.username);
-			}
-			else
-			{
-				int64_t offset = this->stringPairs.Size()-ref;
-				if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
-					throw std::runtime_error("o5m reference out of range");
-				const std::string &prevPair = this->stringPairs[offset];
-				std::istringstream ss(prevPair);
-				this->DecodeSingleString(ss, uidStr);
-				this->DecodeSingleString(ss, out.username);
-			}
-
+			this->ReadStringPair(nodeDataStream, uidStr, out.username);
 			if (uidStr.size() > 0)
 				out.uid = DecodeVarint(uidStr.c_str());
-/*
-			bool valid = this->ReadStringPair(nodeDataStream, uidStr, out.username);
-			if (uidStr.size() > 0)
-				out.uid = DecodeVarint(uidStr.c_str());
-			if (!valid)
-				cout << "Found null user" << endl;
-*/
 		}
 	}
 }
