@@ -58,7 +58,7 @@ public:
 class OsmXmlEncodeBase : public IDataStreamHandler
 {
 protected:
-	void WriteStart();
+	void WriteStart(const TagMap &customAttribs);
 	void EncodeMetaData(const class MetaData &metaData, std::stringstream &ss);
 
 public:
@@ -99,7 +99,7 @@ private:
 	}
 
 public:
-	OsmXmlEncode(std::streambuf &handle);
+	OsmXmlEncode(std::streambuf &handle, const TagMap &customAttribs);
 	virtual ~OsmXmlEncode();
 };
 
@@ -114,7 +114,7 @@ private:
 	virtual void operator<< (const string &val);
 
 public:
-	PyOsmXmlEncode(PyObject* obj);
+	PyOsmXmlEncode(PyObject* obj, const TagMap &customAttribs);
 	virtual ~PyOsmXmlEncode();	
 
 	void SetOutput(PyObject* obj);
@@ -165,9 +165,10 @@ class OsmChangeXmlEncode : public OsmXmlEncodeBase
 {
 private:
 	std::ostream handle;
+	TagMap customAttribs;
 
 public:
-	OsmChangeXmlEncode(std::streambuf &fiIn);
+	OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn);
 	virtual ~OsmChangeXmlEncode();
 
 	void Encode(const class OsmChange &osmChange);

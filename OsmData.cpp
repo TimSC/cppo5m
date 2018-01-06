@@ -321,13 +321,15 @@ void SaveToO5m(const class OsmData &osmData, std::streambuf &fi)
 
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi)
 {
-	class OsmXmlEncode enc(fi);
+	TagMap empty;
+	class OsmXmlEncode enc(fi, empty);
 	osmData.StreamTo(enc);
 }
 
 void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi)
 {
-	class OsmChangeXmlEncode enc(fi);
+	TagMap empty;
+	class OsmChangeXmlEncode enc(fi, empty);
 	enc.Encode(osmChange);
 }
 

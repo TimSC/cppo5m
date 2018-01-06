@@ -281,10 +281,44 @@ OsmXmlEncodeBase::~OsmXmlEncodeBase()
 
 }
 
-void OsmXmlEncodeBase::WriteStart()
+void OsmXmlEncodeBase::WriteStart(const TagMap &customAttribs)
 {
 	*this << "<?xml version='1.0' encoding='UTF-8'?>\n";
-	*this << "<osm version='0.6' upload='true' generator='cppo5m'>\n";
+	*this << "<osm";
+	TagMap::const_iterator it = customAttribs.find("version");
+	if(it != customAttribs.end())
+	{
+		*this << " version='"; 
+		*this << escapexml(it->second);
+		*this << "'";
+	}
+	else
+		*this << " version='0.6'";
+
+	it = customAttribs.find("generator");
+	if(it != customAttribs.end())
+	{
+		*this << " generator='";
+		*this << escapexml(it->second);
+		*this << "'";
+	}
+	else
+		*this << " generator='cppo5m'";
+
+	for(it = customAttribs.begin(); it != customAttribs.end(); it++)
+	{
+		if(it->first == "version" || it->first == "generator")
+			continue;
+		if(it->second.length() == 0)
+			continue;
+		*this << " ";
+		*this << escapexml(it->first);
+		*this <<"='";
+		*this << escapexml(it->second);
+		*this <<"'";
+	}
+
+	*this << ">\n";
 }
 
 void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::stringstream &ss)
@@ -419,9 +453,9 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 
 // ****************************
 
-OsmXmlEncode::OsmXmlEncode(std::streambuf &handleIn): OsmXmlEncodeBase(), handle(&handleIn)
+OsmXmlEncode::OsmXmlEncode(std::streambuf &handleIn, const TagMap &customAttribs): OsmXmlEncodeBase(), handle(&handleIn)
 {
-	this->WriteStart();
+	this->WriteStart(customAttribs);
 }
 
 OsmXmlEncode::~OsmXmlEncode()
@@ -430,13 +464,13 @@ OsmXmlEncode::~OsmXmlEncode()
 }
 
 #ifdef PYTHON_AWARE
-PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj): OsmXmlEncodeBase()
+PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj, const TagMap &customAttribs): OsmXmlEncodeBase()
 {
 	m_Write = NULL;
 	m_PyObj = NULL;
 
 	this->SetOutput(obj);
-	this->WriteStart();
+	this->WriteStart(customAttribs);
 }
 
 PyOsmXmlEncode::~PyOsmXmlEncode()
@@ -590,9 +624,9 @@ void OsmChangeXmlDecode::DecodeHeader()
 
 // *************************************
 
-OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn) : handle(&fiIn), OsmXmlEncodeBase()
+OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn) : handle(&fiIn), OsmXmlEncodeBase()
 {
-
+	customAttribs = customAttribsIn;
 }
 
 OsmChangeXmlEncode::~OsmChangeXmlEncode()
