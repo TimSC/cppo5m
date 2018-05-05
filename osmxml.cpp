@@ -368,7 +368,7 @@ void OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	stringstream ss;
 	ss.precision(9);
-	ss << "  <bounds minlat='"<<y1<<"' minlon='"<<x1<<"' ";
+	ss << fixed << "  <bounds minlat='"<<y1<<"' minlon='"<<x1<<"' ";
 	ss << "maxlat='"<<y2<<"' maxlon='"<<x2<<"' />" << endl;
 	*this << ss.str();
 }
@@ -380,7 +380,7 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 	ss.precision(9);
 	ss << "  <node id='"<<objId<<"'";
 	this->EncodeMetaData(metaData, ss);
-	ss << " lat='"<<lat<<"' lon='"<<lon<<"'";
+	ss << fixed << " lat='"<<lat<<"' lon='"<<lon<<"'";
 	if(tags.size() == 0)
 		ss <<" />" << endl;
 	else
