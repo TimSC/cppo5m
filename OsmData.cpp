@@ -1,5 +1,7 @@
 #include "OsmData.h"
 #include <iostream>
+#include <sstream>
+using namespace std;
 
 OsmObject::OsmObject()
 {
@@ -232,6 +234,25 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 	this->relations.push_back(osmRelation);
 }
 
+void OsmData::StoreObject(const class OsmObject *obj)
+{
+	const class OsmNode *node = dynamic_cast<const class OsmNode *>(obj);
+	if(node != nullptr)
+	{
+		this->nodes.push_back(*node);
+		return;
+	}
+	const class OsmWay *way = dynamic_cast<const class OsmWay *>(obj);
+	if(way != nullptr)
+	{
+		this->ways.push_back(*way);
+		return;
+	}
+	const class OsmRelation *relation = dynamic_cast<const class OsmRelation *>(obj);
+	if(relation != nullptr)
+		this->relations.push_back(*relation);
+}
+
 // *********************************
 
 OsmChange::OsmChange() : IOsmChangeBlock()
@@ -262,6 +283,62 @@ void OsmChange::StoreOsmData(const std::string &action, const class OsmData &osm
 	this->actions.push_back(action);
 	this->blocks.push_back(osmData);
 	this->ifunused.push_back(ifunused);
+}
+
+void OsmChange::StoreOsmData(const class OsmObject *obj, bool ifunused)
+{
+	std::string currentAction;
+	if(this->actions.size() > 0)
+		currentAction = this->actions[this->actions.size()-1];
+
+	//Sort objects into create, modify, delete groups using metadata
+	if(obj->metaData.version <= 1)
+	{
+		if(currentAction != "create")
+		{
+			class OsmData osmData;
+			osmData.StoreObject(obj);
+			this->StoreOsmData("create", osmData, false);
+		}
+		else
+		{
+			class OsmData &block = this->blocks[this->blocks.size()-1];
+			block.StoreObject(obj);
+		}
+	}
+	else
+	{
+		if(obj->metaData.visible == true)
+		{
+			if(currentAction != "modify")
+			{
+				class OsmData osmData;
+				osmData.StoreObject(obj);
+				this->StoreOsmData("modify", osmData, false);
+			}
+			else
+			{
+				class OsmData &block = this->blocks[this->blocks.size()-1];
+				block.StoreObject(obj);
+			}
+
+		}
+		else
+		{
+			if(currentAction != "delete")
+			{
+				class OsmData osmData;
+				osmData.StoreObject(obj);
+				this->StoreOsmData("delete", osmData, ifunused);
+			}
+			else
+			{
+				class OsmData &block = this->blocks[this->blocks.size()-1];
+				block.StoreObject(obj);
+			}
+
+		}
+	}
 }
 
 // ******* Utility funcs **********
@@ -331,5 +408,23 @@ void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi)
 	TagMap empty;
 	class OsmChangeXmlEncode enc(fi, empty);
 	enc.Encode(osmChange);
+}
+
+void LoadFromO5m(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output)
+{
+	std::istringstream buff(fi);
+	LoadFromO5m(*buff.rdbuf(), output);
+}
+
+void LoadFromOsmXml(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output)
+{
+	std::istringstream buff(fi);
+	LoadFromOsmXml(*buff.rdbuf(), output);
+}
+
+void LoadFromOsmChangeXml(const std::string &fi, std::shared_ptr<class IOsmChangeBlock> output)
+{
+	std::istringstream buff(fi);
+	LoadFromOsmChangeXml(*buff.rdbuf(), output);
 }
 
