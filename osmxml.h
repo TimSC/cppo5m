@@ -79,8 +79,8 @@ public:
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles);
 
-	virtual void write (const char* s, streamsize n)=0;
-	virtual void operator<< (const string &val)=0;
+	virtual void write (const char* s, std::streamsize n)=0;
+	virtual void operator<< (const std::string &val)=0;
 };
 
 class OsmXmlEncode : public OsmXmlEncodeBase
@@ -88,12 +88,12 @@ class OsmXmlEncode : public OsmXmlEncodeBase
 private:
 	std::ostream handle;
 	
-	virtual void write (const char* s, streamsize n)
+	virtual void write (const char* s, std::streamsize n)
 	{
 		this->handle.write(s, n);
 	}
 
-	virtual void operator<< (const string &val)
+	virtual void operator<< (const std::string &val)
 	{
 		this->handle << val;
 	}
@@ -110,8 +110,8 @@ private:
 	PyObject* m_PyObj;
 	PyObject* m_Write;
 
-	virtual void write (const char* s, streamsize n);
-	virtual void operator<< (const string &val);
+	virtual void write (const char* s, std::streamsize n);
+	virtual void operator<< (const std::string &val);
 
 public:
 	PyOsmXmlEncode(PyObject* obj, const TagMap &customAttribs);
@@ -173,8 +173,8 @@ public:
 
 	void Encode(const class OsmChange &osmChange);
 
-	virtual void write (const char* s, streamsize n);
-	virtual void operator<< (const string &val);
+	virtual void write (const char* s, std::streamsize n);
+	virtual void operator<< (const std::string &val);
 };
 
 #endif //_OSMXML_H

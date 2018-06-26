@@ -1,9 +1,9 @@
 
 #include <string>
 #include <vector>
+#include <stdexcept>
 #include <iostream>
 #include <stdlib.h>
-using namespace std;
 
 inline signed long WrapAround(long int val, long int limit)
 {
@@ -19,7 +19,7 @@ inline signed long WrapAround(long int val, long int limit)
 template <class T> class FixedDeque
 {
 protected:
-	vector<T> buffer;
+	std::vector<T> buffer;
 	signed long frontCursor; //Get items from here using pop_front
 	signed long backCursor; //Insert items here using push_back
 
@@ -58,11 +58,11 @@ template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 	if(si+1 == this->buffer.size()) return;
 	size_t currentSize = this->Size();
 	if(si < currentSize)
-		throw runtime_error("insufficient space to hold current content");
+		throw std::runtime_error("insufficient space to hold current content");
 	if(currentSize > 0)
 	{
 		//Copy content to temporary vector
-		vector<T> tmp;
+		std::vector<T> tmp;
 		tmp.resize(currentSize);
 		size_t count = 0;
 		while (this->frontCursor != this->backCursor)
@@ -111,7 +111,7 @@ template <class T> size_t FixedDeque<T>::Size()
 
 template <class T> void FixedDeque<T>::Debug()
 {
-	cout << "debug" << this->frontCursor << "," << this->backCursor << endl;
+	std::cout << "debug" << this->frontCursor << "," << this->backCursor << std::endl;
 }
 
 template <class T> size_t FixedDeque<T>::Fc()
@@ -127,7 +127,7 @@ template <class T> size_t FixedDeque<T>::Bc()
 template <class T> void FixedDeque<T>::PushBack(const T &obj)
 {
 	if(this->AvailableSpace() == 0)
-		throw runtime_error("deque overflow");
+		throw std::runtime_error("deque overflow");
 	this->buffer[this->backCursor] = obj;
 	this->backCursor = WrapAround(this->backCursor+1, this->buffer.size());
 }
@@ -135,7 +135,7 @@ template <class T> void FixedDeque<T>::PushBack(const T &obj)
 template <class T> void FixedDeque<T>::PushFront(const T &obj)
 {
 	if(this->AvailableSpace() == 0)
-		throw runtime_error("deque overflow");
+		throw std::runtime_error("deque overflow");
 	this->frontCursor = WrapAround(this->frontCursor-1, this->buffer.size());
 	this->buffer[this->frontCursor] = obj;
 }
@@ -143,7 +143,7 @@ template <class T> void FixedDeque<T>::PushFront(const T &obj)
 template <class T> T FixedDeque<T>::PopFront()
 {
 	if(this->Size() == 0)
-		throw runtime_error("deque underflow");
+		throw std::runtime_error("deque underflow");
 	T obj = this->buffer[this->frontCursor];
 	T empty;
 	this->buffer[this->frontCursor] = empty; //Clear old data
@@ -154,7 +154,7 @@ template <class T> T FixedDeque<T>::PopFront()
 template <class T> T FixedDeque<T>::PopBack()
 {
 	if(this->Size() == 0)
-		throw runtime_error("deque underflow");
+		throw std::runtime_error("deque underflow");
 	this->backCursor = WrapAround(this->backCursor-1, this->buffer.size());
 	T obj = this->buffer[this->backCursor];
 	T empty;
@@ -178,7 +178,7 @@ template <class T> void FixedDeque<T>::Clear()
 template <class T> const T& FixedDeque<T>::operator[] (int index)
 {
 	if (index < 0 || (size_t)index >= this->Size())
-		throw range_error("Invalid index");
+		throw std::range_error("Invalid index");
 	signed long cursor = WrapAround(this->frontCursor + index, this->buffer.size());
 	return this->buffer[cursor];
 }

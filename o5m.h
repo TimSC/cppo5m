@@ -45,7 +45,7 @@ protected:
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
 	FixedDeque<std::string> stringPairs;
-	map<std::string, int> stringPairsDict;  
+	std::map<std::string, int> stringPairsDict;  
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
@@ -123,7 +123,7 @@ protected:
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
 	FixedDeque<std::string> stringPairs;
-	map<std::string, int> stringPairsDict; 
+	std::map<std::string, int> stringPairsDict; 
 	double lastLat;
 	double lastLon;
 	int64_t lastRefNode;
@@ -141,8 +141,8 @@ protected:
 	void AddToRefTable(const std::string &encodedStrings);
 	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
-	virtual void write (const char* s, streamsize n)=0;
-	virtual void operator<< (const string &val)=0;
+	virtual void write (const char* s, std::streamsize n)=0;
+	virtual void operator<< (const std::string &val)=0;
 
 public:
 	O5mEncodeBase();
@@ -171,12 +171,12 @@ class O5mEncode : public O5mEncodeBase
 private:
 	std::ostream handle;
 	
-	virtual void write (const char* s, streamsize n)
+	virtual void write (const char* s, std::streamsize n)
 	{
 		this->handle.write(s, n);
 	}
 
-	virtual void operator<< (const string &val)
+	virtual void operator<< (const std::string &val)
 	{
 		this->handle << val;
 	}
@@ -193,7 +193,7 @@ private:
 	PyObject* m_PyObj;
 	PyObject* m_Write;
 
-	virtual void write (const char* s, streamsize n)
+	virtual void write (const char* s, std::streamsize n)
 	{
 		if(this->m_Write == NULL)
 			return;
@@ -205,7 +205,7 @@ private:
 		Py_XDECREF(ret);
 	}
 
-	virtual void operator<< (const string &val)
+	virtual void operator<< (const std::string &val)
 	{
 		if(this->m_Write == NULL)
 			return;
