@@ -822,6 +822,16 @@ void O5mEncodeBase::Finish()
 	this->write("\xfe", 1);
 }
 
+void O5mEncodeBase::write (const char* s, std::streamsize n)
+{
+
+}
+
+void O5mEncodeBase::operator<< (const std::string &val)
+{
+
+}
+
 // **** Output specific encoders
 
 O5mEncode::O5mEncode(std::streambuf &handleIn): O5mEncodeBase(), handle(&handleIn)
@@ -847,6 +857,30 @@ PyO5mEncode::~PyO5mEncode()
 {
 	Py_XDECREF(m_Write);
 	Py_XDECREF(m_PyObj);
+}
+
+void PyO5mEncode::write (const char* s, std::streamsize n)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+	#endif 
+	Py_XDECREF(ret);
+}
+
+void PyO5mEncode::operator<< (const std::string &val)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+	#endif 
+	Py_XDECREF(ret);
 }
 
 #endif //PYTHON_AWARE

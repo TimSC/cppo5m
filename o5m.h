@@ -141,8 +141,8 @@ protected:
 	void AddToRefTable(const std::string &encodedStrings);
 	size_t FindStringPairsIndex(std::string needle, bool &indexFound);
 
-	virtual void write (const char* s, std::streamsize n)=0;
-	virtual void operator<< (const std::string &val)=0;
+	virtual void write (const char* s, std::streamsize n);
+	virtual void operator<< (const std::string &val);
 
 public:
 	O5mEncodeBase();
@@ -170,7 +170,8 @@ class O5mEncode : public O5mEncodeBase
 {
 private:
 	std::ostream handle;
-	
+
+protected:
 	virtual void write (const char* s, std::streamsize n)
 	{
 		this->handle.write(s, n);
@@ -193,29 +194,9 @@ private:
 	PyObject* m_PyObj;
 	PyObject* m_Write;
 
-	virtual void write (const char* s, std::streamsize n)
-	{
-		if(this->m_Write == NULL)
-			return;
-		#if PY_MAJOR_VERSION < 3
-		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
-		#else
-		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
-		#endif 
-		Py_XDECREF(ret);
-	}
-
-	virtual void operator<< (const std::string &val)
-	{
-		if(this->m_Write == NULL)
-			return;
-		#if PY_MAJOR_VERSION < 3
-		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
-		#else
-		PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
-		#endif 
-		Py_XDECREF(ret);
-	}
+protected:
+	virtual void write (const char* s, std::streamsize n);
+	virtual void operator<< (const std::string &val);
 
 public:
 	PyO5mEncode(PyObject* obj);

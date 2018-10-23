@@ -61,6 +61,9 @@ protected:
 	void WriteStart(const TagMap &customAttribs);
 	void EncodeMetaData(const class MetaData &metaData, std::stringstream &ss);
 
+	virtual void write (const char* s, std::streamsize n);
+	virtual void operator<< (const std::string &val);
+
 public:
 	OsmXmlEncodeBase();
 	virtual ~OsmXmlEncodeBase();
@@ -78,16 +81,14 @@ public:
 	void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles);
-
-	virtual void write (const char* s, std::streamsize n)=0;
-	virtual void operator<< (const std::string &val)=0;
 };
 
 class OsmXmlEncode : public OsmXmlEncodeBase
 {
 private:
 	std::ostream handle;
-	
+
+protected:
 	virtual void write (const char* s, std::streamsize n)
 	{
 		this->handle.write(s, n);

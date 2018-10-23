@@ -451,6 +451,10 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 	*this << ss.str();
 }
 
+void OsmXmlEncodeBase::write (const char* s, std::streamsize n) {}
+
+void OsmXmlEncodeBase::operator<< (const std::string &val) {}
+
 // ****************************
 
 OsmXmlEncode::OsmXmlEncode(std::streambuf &handleIn, const TagMap &customAttribs): OsmXmlEncodeBase(), handle(&handleIn)
@@ -462,6 +466,8 @@ OsmXmlEncode::~OsmXmlEncode()
 {
 
 }
+
+// ****************************
 
 #ifdef PYTHON_AWARE
 PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj, const TagMap &customAttribs): OsmXmlEncodeBase()
