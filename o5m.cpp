@@ -121,7 +121,8 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 
 O5mDecode::~O5mDecode()
 {
-
+	if(this->output != nullptr)
+		this->output->Finish();
 }
 
 void O5mDecode::ResetDeltaCoding()

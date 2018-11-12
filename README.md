@@ -1,6 +1,8 @@
 # cppo5m
 Encoding and decoding o5m/xml OSM map format in C++
 
+	sudo apt install libboost-program-options-dev
+
 	git clone https://github.com/TimSC/cppo5m.git --recursive
 
 Example:
@@ -24,4 +26,6 @@ Example:
 		osmData.SaveToO5m(outfi);
 		outfi.close();
 	}
+
+o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m and osm so far. It is mainly useful for testing.
 
