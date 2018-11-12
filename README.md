@@ -27,5 +27,7 @@ Example:
 		outfi.close();
 	}
 
-o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m and osm so far. It is mainly useful for testing.
+o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m and osm so far. It is mainly useful for testing. Compressed input is not supported but streaming from the console is:
+
+	gunzip -c data.o5m.gz | ./o5mconvert - --in-o5m
 
