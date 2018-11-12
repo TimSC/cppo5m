@@ -291,7 +291,7 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 		if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
 		{
 			stringstream ss;
-			ss << "o5m reference " << offset << " out of range (should be in range 0-"<< this->stringPairs.Size() << ")";
+			ss << "o5m reference " << offset << " out of range (should be in range 0-"<< (this->stringPairs.Size()-1) << ")";
 			throw std::runtime_error(ss.str());
 		}
 		const std::string &prevPair = this->stringPairs[offset];
@@ -470,7 +470,7 @@ void O5mDecode::DecodeRelation()
 			if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
 			{
 				stringstream ss;
-				ss << "o5m reference " << offset << " out of range (should be in range 0-"<< this->stringPairs.Size() << ")";
+				ss << "o5m reference " << offset << " out of range (should be in range 0-"<< (this->stringPairs.Size()-1) << ")";
 				throw std::runtime_error(ss.str());
 			}
 			typeAndRole = this->stringPairs[offset];
