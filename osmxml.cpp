@@ -73,6 +73,7 @@ OsmXmlDecodeString::OsmXmlDecodeString()
 OsmXmlDecodeString::~OsmXmlDecodeString()
 {
 	XML_ParserFree(parser);
+	output->Finish();
 }
 
 void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
@@ -236,7 +237,6 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 	}
 	if(done)
 	{
-		output->Finish();
 		parseCompletedOk = true;
 	}
 	return !done;
