@@ -20,7 +20,7 @@ protected:
 	TagMap metadataMap, tags;
 	std::vector<int64_t> memObjIds;
 	std::vector<std::string> memObjTypes, memObjRoles;
-	bool firstParseCall;
+	bool firstParseCall, parseCompleted;
 
 	void DecodeMetaData(class MetaData &metaData);
 
@@ -35,6 +35,7 @@ public:
 	virtual bool DecodeNext() {return false;};
 	virtual void DecodeHeader() {};
 	bool DecodeSubString(const char *xml, size_t len, bool done);
+	void DecodeFinish();
 
 	void StartElement(const XML_Char *name, const XML_Char **atts);
 	void EndElement(const XML_Char *name);

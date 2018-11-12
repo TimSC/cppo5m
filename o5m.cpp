@@ -98,6 +98,8 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 	refTableMaxSize(15000),
 	output(NULL)
 {
+	finished = false;
+
 	if(handle.fail())
 		throw std::runtime_error("Stream handle indicating failure in o5m decode");
 
@@ -121,8 +123,8 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 
 O5mDecode::~O5mDecode()
 {
-	if(this->output != nullptr)
-		this->output->Finish();
+	if(!this->finished)
+		this->DecodeFinish();
 }
 
 void O5mDecode::ResetDeltaCoding()
@@ -140,6 +142,9 @@ void O5mDecode::ResetDeltaCoding()
 
 bool O5mDecode::DecodeNext()
 {
+	if(finished)
+		throw runtime_error("Decode already finished");
+
 	unsigned char code = this->handle.get();
 	if(this->handle.fail())
 		throw std::runtime_error("Error reading type code");
@@ -184,6 +189,9 @@ bool O5mDecode::DecodeNext()
 
 void O5mDecode::DecodeHeader()
 {
+	if(finished)
+		throw runtime_error("Decode already finished");
+
 	uint64_t length = DecodeVarint(this->handle);
 	std::string fileType;
 	fileType.resize(length);
@@ -503,6 +511,15 @@ void O5mDecode::DecodeRelation()
 		this->output->StoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
 			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
 
+}
+
+void O5mDecode::DecodeFinish()
+{
+	if(finished)
+		throw runtime_error("Decode already finished");
+	if(this->output != nullptr)
+		this->output->Finish();
+	finished = true;
 }
 
 // ************** o5m encoder ****************

@@ -63,6 +63,7 @@ static void EndChangeElement(void *userData, const XML_Char *name)
 OsmXmlDecodeString::OsmXmlDecodeString()
 {
 	xmlDepth = 0;
+	parseCompleted = false;
 	parseCompletedOk = false;
 	parser = XML_ParserCreate(NULL);
 	XML_SetUserData(parser, this);
@@ -72,8 +73,9 @@ OsmXmlDecodeString::OsmXmlDecodeString()
 
 OsmXmlDecodeString::~OsmXmlDecodeString()
 {
+	if(!this->parseCompleted)
+		this->DecodeFinish();
 	XML_ParserFree(parser);
-	output->Finish();
 }
 
 void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
@@ -220,6 +222,8 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 {
 	if(output == NULL)
 		throw runtime_error("OsmXmlDecode output pointer is null");
+	if(this->parseCompleted)
+		throw runtime_error("Decode already finished");
 
 	if(this->firstParseCall)
 	{
@@ -240,6 +244,14 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 		parseCompletedOk = true;
 	}
 	return !done;
+}
+
+void OsmXmlDecodeString::DecodeFinish()
+{
+	if(parseCompleted)
+		throw runtime_error("Decode already finished");
+	output->Finish();
+	parseCompleted = true;
 }
 
 // ***********************************

@@ -355,7 +355,7 @@ void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> o
 		if(!ok) break;
 	}
 
-	//The output is only finished when the decoder goes out of scope and the destructor is called.
+	dec.DecodeFinish();
 }
 
 void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
@@ -374,7 +374,7 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 		}
 	}
 
-	//The output is only finished when the decoder goes out of scope and the destructor is called.
+	dec.DecodeFinish();
 }
 
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output)

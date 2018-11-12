@@ -51,6 +51,7 @@ protected:
 	int64_t lastRefNode;
 	int64_t lastRefWay;
 	int64_t lastRefRelation;
+	bool finished;
 
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
@@ -80,6 +81,7 @@ public:
 	void ResetDeltaCoding();
 	bool DecodeNext();
 	void DecodeHeader();
+	void DecodeFinish();
 
 	std::shared_ptr<class IDataStreamHandler> output;
 };
