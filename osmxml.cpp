@@ -538,6 +538,7 @@ OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 	decodeBuff(new class OsmData())
 {
 	xmlDepth = 0;
+	parseCompleted = false;
 	parseCompletedOk = false;
 	ifunused = false;
 	parser = XML_ParserCreate(NULL);
@@ -549,6 +550,8 @@ OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 
 OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()
 {
+	if(!this->parseCompleted)
+		this->DecodeFinish();
 	XML_ParserFree(parser);
 }
 
@@ -595,6 +598,8 @@ void OsmChangeXmlDecodeString::EndElement(const XML_Char *name)
 
 bool OsmChangeXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 {
+	if(this->parseCompleted)
+		throw runtime_error("Decode already finished");
 	if(output == NULL)
 		throw runtime_error("OsmXmlDecode output pointer is null");
 
@@ -608,11 +613,20 @@ bool OsmChangeXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool
 	}
 	if(done)
 	{
-		decodeBuff->Finish();
 		parseCompletedOk = true;
 	}
 	return !done;
 }
+
+void OsmChangeXmlDecodeString::DecodeFinish()
+{
+	if(this->parseCompleted)
+		throw runtime_error("Decode already finished");
+
+	decodeBuff->Finish();
+	this->parseCompleted = true;
+}
+
 // ***********************************
 
 OsmChangeXmlDecode::OsmChangeXmlDecode(std::streambuf &handleIn):

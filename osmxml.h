@@ -133,6 +133,7 @@ protected:
 	std::shared_ptr<class OsmData> decodeBuff;
 	std::string currentAction;
 	bool ifunused;	
+	bool parseCompleted;
 
 public:
 	std::string errString;
@@ -143,6 +144,7 @@ public:
 	virtual ~OsmChangeXmlDecodeString();
 
 	bool DecodeSubString(const char *xml, size_t len, bool done);
+	void DecodeFinish();
 
 	void StartElement(const XML_Char *name, const XML_Char **atts);
 	void EndElement(const XML_Char *name);

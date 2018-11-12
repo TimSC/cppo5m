@@ -392,6 +392,8 @@ void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBl
 			break;
 		}
 	}
+
+	dec.DecodeFinish();
 }
 
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi)
