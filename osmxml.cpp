@@ -300,22 +300,22 @@ void OsmXmlEncodeBase::WriteStart(const TagMap &customAttribs)
 	TagMap::const_iterator it = customAttribs.find("version");
 	if(it != customAttribs.end())
 	{
-		*this << " version='"; 
+		*this << " version=\""; 
 		*this << escapexml(it->second);
-		*this << "'";
+		*this << "\"";
 	}
 	else
-		*this << " version='0.6'";
+		*this << " version=\"0.6\"";
 
 	it = customAttribs.find("generator");
 	if(it != customAttribs.end())
 	{
-		*this << " generator='";
+		*this << " generator=\"";
 		*this << escapexml(it->second);
-		*this << "'";
+		*this << "\"";
 	}
 	else
-		*this << " generator='cppo5m'";
+		*this << " generator=\"cppo5m\"";
 
 	for(it = customAttribs.begin(); it != customAttribs.end(); it++)
 	{
@@ -325,9 +325,9 @@ void OsmXmlEncodeBase::WriteStart(const TagMap &customAttribs)
 			continue;
 		*this << " ";
 		*this << escapexml(it->first);
-		*this <<"='";
+		*this <<"=\"";
 		*this << escapexml(it->second);
-		*this <<"'";
+		*this <<"\"";
 	}
 
 	*this << ">\n";
@@ -340,20 +340,20 @@ void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::strin
 		time_t tt = metaData.timestamp;
 		char buf[50];
 		strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&tt));
-		ss << " timestamp='"<<buf<<"'";
+		ss << " timestamp=\""<<buf<<"\"";
 	}
 	if(metaData.uid != 0)
-		ss << " uid='" << metaData.uid << "'";
+		ss << " uid=\"" << metaData.uid << "\"";
 	if(metaData.username.length() > 0)
-		ss << " user='" << escapexml(metaData.username) << "'";
+		ss << " user=\"" << escapexml(metaData.username) << "\"";
 	if(metaData.visible)
-		ss << " visible='true'";
+		ss << " visible=\"true\"";
 	else
-		ss << " visible='false'";
+		ss << " visible=\"false\"";
 	if(metaData.version != 0)
-		ss << " version='" << metaData.version << "'";
+		ss << " version=\"" << metaData.version << "\"";
 	if(metaData.changeset != 0)
-		ss << " changeset='" << metaData.changeset << "'";
+		ss << " changeset=\"" << metaData.changeset << "\"";
 }
 
 void OsmXmlEncodeBase::Sync()
@@ -380,8 +380,8 @@ void OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	stringstream ss;
 	ss.precision(9);
-	ss << fixed << "  <bounds minlat='"<<y1<<"' minlon='"<<x1<<"' ";
-	ss << "maxlat='"<<y2<<"' maxlon='"<<x2<<"' />" << endl;
+	ss << fixed << "  <bounds minlat=\""<<y1<<"\" minlon=\""<<x1<<"\" ";
+	ss << "maxlat=\""<<y2<<"\" maxlon=\""<<x2<<"\" />" << endl;
 	*this << ss.str();
 }
 
@@ -390,9 +390,9 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 {
 	stringstream ss;
 	ss.precision(9);
-	ss << "  <node id='"<<objId<<"'";
+	ss << "  <node id=\""<<objId<<"\"";
 	this->EncodeMetaData(metaData, ss);
-	ss << fixed << " lat='"<<lat<<"' lon='"<<lon<<"'";
+	ss << fixed << " lat=\""<<lat<<"\" lon=\""<<lon<<"\"";
 	if(tags.size() == 0)
 		ss <<" />" << endl;
 	else
@@ -402,7 +402,7 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 		//Write tags
 		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
 		{
-			ss << "    <tag k='"<<escapexml(it->first)<<"' v='"<<escapexml(it->second)<<"' />" << endl;
+			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
 		}
 		ss << "  </node>" << endl;
 	}
@@ -413,7 +413,7 @@ void OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData,
 	const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	stringstream ss;
-	ss << "  <way id='"<<objId<<"'";
+	ss << "  <way id=\""<<objId<<"\"";
 	this->EncodeMetaData(metaData, ss);
 	if(tags.size() == 0 && refs.size() == 0)
 		ss <<" />" << endl;
@@ -423,11 +423,11 @@ void OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData,
 
 		//Write node IDs
 		for(size_t i=0; i<refs.size(); i++)
-			ss << "    <nd ref='"<<refs[i]<<"' />" << endl;
+			ss << "    <nd ref=\""<<refs[i]<<"\" />" << endl;
 
 		//Write tags
 		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
-			ss << "    <tag k='"<<escapexml(it->first)<<"' v='"<<escapexml(it->second)<<"' />" << endl;
+			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
 
 		ss << "  </way>" << endl;
 	}
@@ -442,7 +442,7 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 		throw std::invalid_argument("Length of ref vectors must be equal");
 
 	stringstream ss;
-	ss << "  <relation id='"<<objId<<"'";
+	ss << "  <relation id=\""<<objId<<"\"";
 	this->EncodeMetaData(metaData, ss);
 	if(tags.size() == 0 && refTypeStrs.size() == 0)
 		ss <<" />" << endl;
@@ -452,11 +452,11 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 
 		//Write node IDs
 		for(size_t i=0; i<refTypeStrs.size(); i++)
-			ss << "    <member type='"<<escapexml(refTypeStrs[i])<<"' ref='"<<refIds[i]<<"' role='"<<escapexml(refRoles[i])<<"' />" << endl;
+			ss << "    <member type=\""<<escapexml(refTypeStrs[i])<<"\" ref=\""<<refIds[i]<<"\" role=\""<<escapexml(refRoles[i])<<"\" />" << endl;
 
 		//Write tags
 		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
-			ss << "    <tag k='"<<escapexml(it->first)<<"' v='"<<escapexml(it->second)<<"' />" << endl;
+			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
 
 		ss << "  </relation>" << endl;
 	}
