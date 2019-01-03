@@ -656,14 +656,31 @@ void OsmChangeXmlDecode::DecodeHeader()
 
 // *************************************
 
-OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn) : handle(&fiIn), OsmXmlEncodeBase()
+OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn, bool separateActionsIn) : handle(&fiIn), OsmXmlEncodeBase()
 {
 	customAttribs = customAttribsIn;
+	separateActions = separateActionsIn;
 }
 
 OsmChangeXmlEncode::~OsmChangeXmlEncode()
 {
 
+}
+
+void OsmChangeXmlEncode::EncodeBySingleAction(const std::string &action, const std::vector<const class OsmObject *> &objs)
+{
+	for(size_t i=0; i<objs.size(); i++)
+	{
+		stringstream actionTagOpen;
+		actionTagOpen << "<" << action << ">" << endl;
+		*this << actionTagOpen.str();
+
+		objs[i]->StreamTo(*this);
+
+		stringstream actionTagClose;
+		actionTagClose << "</" << action << ">" << endl;
+		*this << actionTagClose.str();
+	}
 }
 
 void OsmChangeXmlEncode::Encode(const class OsmChange &osmChange)
@@ -673,17 +690,61 @@ void OsmChangeXmlEncode::Encode(const class OsmChange &osmChange)
 	{
 		const class OsmData &block = osmChange.blocks[i];
 		const std::string &action = osmChange.actions[i];
-		bool ifunusedval = osmChange.ifunused[i];
 
-		stringstream actionTagOpen;
-		actionTagOpen << "<" << action << ">" << endl;
-		*this << actionTagOpen.str();
+		if(separateActions)
+		{
+			std::vector<const class OsmObject *> objs;
 
-		block.StreamTo(*this, false);
+			if(action != "delete")
+			{
+				for(size_t j=0; j<block.nodes.size(); j++) 
+					objs.push_back(&block.nodes[j]);
+				for(size_t j=0; j<block.ways.size(); j++) 
+					objs.push_back(&block.ways[j]);
+				for(size_t j=0; j<block.relations.size(); j++) 
+					objs.push_back(&block.relations[j]);
+			}
+			else
+			{
+				for(size_t j=0; j<block.relations.size(); j++) 
+					objs.push_back(&block.relations[j]);
+				for(size_t j=0; j<block.ways.size(); j++) 
+					objs.push_back(&block.ways[j]);
+				for(size_t j=0; j<block.nodes.size(); j++) 
+					objs.push_back(&block.nodes[j]);
+			}
 
-		stringstream actionTagClose;
-		actionTagClose << "</" << action << ">" << endl;
-		*this << actionTagClose.str();
+			this->EncodeBySingleAction(action, objs);
+		}
+		else
+		{
+			stringstream actionTagOpen;
+			actionTagOpen << "<" << action << ">" << endl;
+			*this << actionTagOpen.str();
+
+			if(action != "delete")
+			{
+				for(size_t j=0; j<block.nodes.size(); j++) 
+					block.nodes[j].StreamTo(*this);
+				for(size_t j=0; j<block.ways.size(); j++) 
+					block.ways[j].StreamTo(*this);
+				for(size_t j=0; j<block.relations.size(); j++) 
+					block.relations[j].StreamTo(*this);
+			}
+			else
+			{
+				for(size_t j=0; j<block.relations.size(); j++) 
+					block.relations[j].StreamTo(*this);
+				for(size_t j=0; j<block.ways.size(); j++) 
+					block.ways[j].StreamTo(*this);
+				for(size_t j=0; j<block.nodes.size(); j++) 
+					block.nodes[j].StreamTo(*this);
+			}
+
+			stringstream actionTagClose;
+			actionTagClose << "</" << action << ">" << endl;
+			*this << actionTagClose.str();
+		}
 	}
 
 	*this << "</osmChange>\n";

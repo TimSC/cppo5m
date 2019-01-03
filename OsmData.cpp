@@ -26,6 +26,11 @@ OsmObject& OsmObject::operator=(const OsmObject &arg)
 	return *this;
 }
 
+void OsmObject::StreamTo(class IDataStreamHandler &enc) const
+{
+
+}
+
 // ***********************************
 
 OsmNode::OsmNode() : OsmObject()
@@ -52,6 +57,12 @@ OsmNode& OsmNode::operator=(const OsmNode &arg)
 	return *this;
 }
 
+void OsmNode::StreamTo(class IDataStreamHandler &enc) const
+{
+	enc.StoreNode(this->objId, this->metaData, 
+		this->tags, this->lat, this->lon);
+}
+
 OsmWay::OsmWay() : OsmObject()
 {
 
@@ -72,6 +83,12 @@ OsmWay& OsmWay::operator=(const OsmWay &arg)
 	OsmObject::operator=(arg);
 	refs = arg.refs;
 	return *this;
+}
+
+void OsmWay::StreamTo(class IDataStreamHandler &enc) const
+{
+	enc.StoreWay(this->objId, this->metaData, 
+		this->tags, this->refs);
 }
 
 OsmRelation::OsmRelation() : OsmObject()
@@ -99,6 +116,13 @@ OsmRelation& OsmRelation::operator=(const OsmRelation &arg)
 	refIds = arg.refIds;
 	refRoles = arg.refRoles;
 	return *this;
+}
+
+void OsmRelation::StreamTo(class IDataStreamHandler &enc) const
+{
+	enc.StoreRelation(this->objId, this->metaData, this->tags, 
+		this->refTypeStrs, this->refIds, 
+		this->refRoles);
 }
 
 // ****** generic osm data store ******
@@ -138,23 +162,19 @@ void OsmData::StreamTo(class IDataStreamHandler &enc, bool finishStream) const
 	for(size_t i=0; i < this->nodes.size(); i++)
 	{
 		const class OsmNode &node = this->nodes[i];
-		enc.StoreNode(node.objId, node.metaData, 
-			node.tags, node.lat, node.lon);
+		node.StreamTo(enc);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->ways.size(); i++)
 	{
 		const class OsmWay &way = this->ways[i];
-		enc.StoreWay(way.objId, way.metaData, 
-			way.tags, way.refs);
+		way.StreamTo(enc);
 	}
 	enc.Reset();
 	for(size_t i=0; i < this->relations.size(); i++)
 	{
 		const class OsmRelation &relation = this->relations[i];
-		enc.StoreRelation(relation.objId, relation.metaData, relation.tags, 
-			relation.refTypeStrs, relation.refIds, 
-			relation.refRoles);
+		relation.StreamTo(enc);
 	}
 	if(finishStream)
 		enc.Finish();
@@ -409,10 +429,10 @@ void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi)
 	osmData.StreamTo(enc);
 }
 
-void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi)
+void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi)
 {
 	TagMap empty;
-	class OsmChangeXmlEncode enc(fi, empty);
+	class OsmChangeXmlEncode enc(fi, empty, separateActions);
 	enc.Encode(osmChange);
 }
 

@@ -170,9 +170,12 @@ class OsmChangeXmlEncode : public OsmXmlEncodeBase
 private:
 	std::ostream handle;
 	TagMap customAttribs;
+	bool separateActions;
+
+	void EncodeBySingleAction(const std::string &action, const std::vector<const class OsmObject *> &objs);
 
 public:
-	OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn);
+	OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn, bool separateActionsIn=false);
 	virtual ~OsmChangeXmlEncode();
 
 	void Encode(const class OsmChange &osmChange);

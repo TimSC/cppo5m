@@ -18,6 +18,7 @@ public:
 	virtual ~OsmObject();
 	OsmObject( const OsmObject &obj);
 	OsmObject& operator=(const OsmObject &arg);
+	virtual void StreamTo(class IDataStreamHandler &enc) const;
 };
 
 class OsmNode : public OsmObject
@@ -30,6 +31,7 @@ public:
 	virtual ~OsmNode();
 	OsmNode( const OsmNode &obj);
 	OsmNode& operator=(const OsmNode &arg);
+	void StreamTo(class IDataStreamHandler &enc) const;
 };
 
 class OsmWay : public OsmObject
@@ -41,6 +43,7 @@ public:
 	virtual ~OsmWay();
 	OsmWay( const OsmWay &obj);
 	OsmWay& operator=(const OsmWay &arg);
+	void StreamTo(class IDataStreamHandler &enc) const;
 };
 
 class OsmRelation : public OsmObject
@@ -54,6 +57,7 @@ public:
 	virtual ~OsmRelation();
 	OsmRelation( const OsmRelation &obj);
 	OsmRelation& operator=(const OsmRelation &arg);
+	void StreamTo(class IDataStreamHandler &enc) const;
 };
 
 ///Provides in memory decoding and encoding of o5m binary streams
@@ -109,7 +113,7 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output);
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
-void SaveToOsmChangeXml(const class OsmChange &osmChange, std::streambuf &fi);
+void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi);
 
 // Convenience functions: load from std::string
 
