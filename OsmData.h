@@ -2,6 +2,7 @@
 #define _OSMDATA_H
 
 #include <memory>
+#include <set>
 #include "o5m.h"
 #include "osmxml.h"
 
@@ -44,6 +45,7 @@ public:
 	OsmWay( const OsmWay &obj);
 	OsmWay& operator=(const OsmWay &arg);
 	void StreamTo(class IDataStreamHandler &enc) const;
+	std::set<int64_t> GetRefIds() const;
 };
 
 class OsmRelation : public OsmObject
@@ -88,6 +90,10 @@ public:
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles);
 	void StoreObject(const class OsmObject *obj);
+
+	std::set<int64_t> GetNodeIds() const;
+	std::set<int64_t> GetWayIds() const;
+	std::set<int64_t> GetRelationIds() const;
 };
 
 class OsmChange : public IOsmChangeBlock

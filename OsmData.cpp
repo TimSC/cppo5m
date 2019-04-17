@@ -91,6 +91,14 @@ void OsmWay::StreamTo(class IDataStreamHandler &enc) const
 		this->tags, this->refs);
 }
 
+std::set<int64_t> OsmWay::GetRefIds() const
+{
+	std::set<int64_t> out;
+	for(size_t i=0; i<refs.size(); i++)
+		out.insert(refs[i]);
+	return out;
+}
+
 OsmRelation::OsmRelation() : OsmObject()
 {
 
@@ -271,6 +279,30 @@ void OsmData::StoreObject(const class OsmObject *obj)
 	const class OsmRelation *relation = dynamic_cast<const class OsmRelation *>(obj);
 	if(relation != nullptr)
 		this->relations.push_back(*relation);
+}
+
+std::set<int64_t> OsmData::GetNodeIds() const
+{
+	std::set<int64_t> out;
+	for(size_t i=0; i<nodes.size(); i++)
+		out.insert(nodes[i].objId);
+	return out;
+}
+
+std::set<int64_t> OsmData::GetWayIds() const
+{
+	std::set<int64_t> out;
+	for(size_t i=0; i<ways.size(); i++)
+		out.insert(ways[i].objId);
+	return out;
+}
+
+std::set<int64_t> OsmData::GetRelationIds() const
+{
+	std::set<int64_t> out;
+	for(size_t i=0; i<relations.size(); i++)
+		out.insert(relations[i].objId);
+	return out;
 }
 
 // *********************************
