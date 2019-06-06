@@ -92,19 +92,19 @@ class IDataStreamHandler
 public:
 	virtual ~IDataStreamHandler() {};
 
-	virtual void Sync() {};
-	virtual void Reset() {};
-	virtual void Finish() {};
+	virtual bool Sync() {return false;};
+	virtual bool Reset() {return false;};
+	virtual bool Finish() {return false;};
 
-	virtual void StoreIsDiff(bool) {};
-	virtual void StoreBounds(double x1, double y1, double x2, double y2) {};
-	virtual void StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double lat, double lon) {};
-	virtual void StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, const std::vector<int64_t> &refs) {};
-	virtual void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+	virtual bool StoreIsDiff(bool) {return false;};
+	virtual bool StoreBounds(double x1, double y1, double x2, double y2) {return false;};
+	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon) {return false;};
+	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs) {return false;};
+	virtual bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
-		const std::vector<std::string> &refRoles) {};
+		const std::vector<std::string> &refRoles) {return false;};
 };
 
 class IOsmChangeBlock
@@ -152,17 +152,17 @@ public:
 
 	void ResetDeltaCoding();
 
-	void Sync();
-	void Reset();
-	void Finish();
+	bool Sync();
+	bool Reset();
+	bool Finish();
 
-	void StoreIsDiff(bool);
-	void StoreBounds(double x1, double y1, double x2, double y2);
-	void StoreNode(int64_t objId, const class MetaData &metaData, 
+	bool StoreIsDiff(bool);
+	bool StoreBounds(double x1, double y1, double x2, double y2);
+	bool StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon);
-	void StoreWay(int64_t objId, const class MetaData &metaData, 
+	bool StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs);
-	void StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+	bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles);
 

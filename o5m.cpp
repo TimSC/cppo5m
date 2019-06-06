@@ -565,7 +565,7 @@ void O5mEncodeBase::ResetDeltaCoding()
 	this->lastRefRelation = 0;
 }
 
-void O5mEncodeBase::StoreIsDiff(bool isDiff)
+bool O5mEncodeBase::StoreIsDiff(bool isDiff)
 {
 	this->write("\xe0", 1);
 	std::string headerData;
@@ -576,9 +576,10 @@ void O5mEncodeBase::StoreIsDiff(bool isDiff)
 	std::string len = EncodeVarint(headerData.size());
 	*this << len;
 	*this << headerData;
+	return false;
 }
 
-void O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
+bool O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	//south-western corner 
 	std::string bboxData;
@@ -593,6 +594,7 @@ void O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 	std::string len = EncodeVarint(bboxData.size());
 	*this << len;
 	*this << bboxData;
+	return false;
 }
 
 void O5mEncodeBase::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
@@ -682,7 +684,7 @@ void O5mEncodeBase::AddToRefTable(const std::string &encodedStrings)
 	this->runningRefOffset ++;
 }
 
-void O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
+bool O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double latIn, double lonIn)
 {
 	this->write("\x10",1);
@@ -712,9 +714,10 @@ void O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 	std::string len = EncodeVarint(binData.size());
 	*this << len;
 	*this << binData;
+	return false;
 }
 
-void O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
+bool O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	this->write("\x11", 1);
@@ -749,9 +752,10 @@ void O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData,
 	std::string binData = tmpStream.str();
 	*this << EncodeVarint(binData.size());
 	*this << binData;
+	return false;
 }
 	
-void O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+bool O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles)
 {
@@ -829,23 +833,26 @@ void O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData,
 	std::string binData = tmpStream.str();
 	*this << EncodeVarint(binData.size());
 	*this << binData;
-
+	return false;
 }
 
-void O5mEncodeBase::Sync()
+bool O5mEncodeBase::Sync()
 {
 	this->write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
+	return false;
 }
 
-void O5mEncodeBase::Reset()
+bool O5mEncodeBase::Reset()
 {
 	this->write("\xff", 1);
 	this->ResetDeltaCoding();
+	return false;
 }
 
-void O5mEncodeBase::Finish()
+bool O5mEncodeBase::Finish()
 {
 	this->write("\xfe", 1);
+	return false;
 }
 
 void O5mEncodeBase::write (const char* s, std::streamsize n)

@@ -206,12 +206,13 @@ bool OsmData::IsEmpty()
 	return true;
 }
 
-void OsmData::StoreIsDiff(bool d)
+bool OsmData::StoreIsDiff(bool d)
 {
 	this->isDiff = d;
+	return false;
 }
 
-void OsmData::StoreBounds(double x1, double y1, double x2, double y2)
+bool OsmData::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	std::vector<double> b;
 	b.resize(4);
@@ -220,9 +221,10 @@ void OsmData::StoreBounds(double x1, double y1, double x2, double y2)
 	b[2] = x2;
 	b[3] = y2;
 	this->bounds.push_back(b);
+	return false;
 }
 
-void OsmData::StoreNode(int64_t objId, const class MetaData &metaData, 
+bool OsmData::StoreNode(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, double lat, double lon)
 {
 	class OsmNode osmNode;
@@ -233,9 +235,10 @@ void OsmData::StoreNode(int64_t objId, const class MetaData &metaData,
 	osmNode.lon = lon;
 
 	this->nodes.push_back(osmNode);
+	return false;
 }
 
-void OsmData::StoreWay(int64_t objId, const class MetaData &metaData, 
+bool OsmData::StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	class OsmWay osmWay;
@@ -245,9 +248,10 @@ void OsmData::StoreWay(int64_t objId, const class MetaData &metaData,
 	osmWay.refs = refs;
 
 	this->ways.push_back(osmWay);
+	return false;
 }
 
-void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+bool OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 		const std::vector<std::string> &refRoles)
 {
@@ -260,6 +264,7 @@ void OsmData::StoreRelation(int64_t objId, const class MetaData &metaData, const
 	osmRelation.refRoles = refRoles;
 
 	this->relations.push_back(osmRelation);
+	return false;
 }
 
 void OsmData::StoreObject(const class OsmObject *obj)

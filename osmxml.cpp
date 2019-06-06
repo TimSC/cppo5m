@@ -356,36 +356,38 @@ void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::strin
 		ss << " changeset=\"" << metaData.changeset << "\"";
 }
 
-void OsmXmlEncodeBase::Sync()
+bool OsmXmlEncodeBase::Sync()
 {
-
+	return false;
 }
 
-void OsmXmlEncodeBase::Reset()
+bool OsmXmlEncodeBase::Reset()
 {
-
+	return false;
 }
 
-void OsmXmlEncodeBase::Finish()
+bool OsmXmlEncodeBase::Finish()
 {
 	*this << "</osm>";
+	return false;
 }
 
-void OsmXmlEncodeBase::StoreIsDiff(bool)
+bool OsmXmlEncodeBase::StoreIsDiff(bool)
 {
-
+	return false;
 }
 
-void OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
+bool OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	stringstream ss;
 	ss.precision(9);
 	ss << fixed << "  <bounds minlat=\""<<y1<<"\" minlon=\""<<x1<<"\" ";
 	ss << "maxlat=\""<<y2<<"\" maxlon=\""<<x2<<"\" />" << endl;
 	*this << ss.str();
+	return false;
 }
 
-void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
+bool OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, double lat, double lon)
 {
 	stringstream ss;
@@ -407,9 +409,10 @@ void OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 		ss << "  </node>" << endl;
 	}
 	*this << ss.str();
+	return false;
 }
 
-void OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
+bool OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, const std::vector<int64_t> &refs)
 {
 	stringstream ss;
@@ -432,9 +435,10 @@ void OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData,
 		ss << "  </way>" << endl;
 	}
 	*this << ss.str();
+	return false;
 }
 
-void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+bool OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
 	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds,
 	const std::vector<std::string> &refRoles)
 {
@@ -461,6 +465,7 @@ void OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaDa
 		ss << "  </relation>" << endl;
 	}
 	*this << ss.str();
+	return false;
 }
 
 void OsmXmlEncodeBase::write (const char* s, std::streamsize n) {}
@@ -656,7 +661,8 @@ void OsmChangeXmlDecode::DecodeHeader()
 
 // *************************************
 
-OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn, bool separateActionsIn) : handle(&fiIn), OsmXmlEncodeBase()
+OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn, bool separateActionsIn) : 
+	OsmXmlEncodeBase(), handle(&fiIn)
 {
 	customAttribs = customAttribsIn;
 	separateActions = separateActionsIn;
