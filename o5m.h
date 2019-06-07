@@ -51,7 +51,7 @@ protected:
 	int64_t lastRefNode;
 	int64_t lastRefWay;
 	int64_t lastRefRelation;
-	bool finished;
+	bool finished, stopProcessing;
 
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;

@@ -99,6 +99,7 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 	output(NULL)
 {
 	finished = false;
+	stopProcessing = false;
 
 	if(handle.fail())
 		throw std::runtime_error("Stream handle indicating failure in o5m decode");
@@ -154,27 +155,27 @@ bool O5mDecode::DecodeNext()
 	{
 	case 0x10:
 		this->DecodeNode();
-		return true;
+		return !stopProcessing;
 		break;
 	case 0x11:
 		this->DecodeWay();
-		return true;
+		return !stopProcessing;
 		break;
 	case 0x12:
 		this->DecodeRelation();
-		return true;
+		return !stopProcessing;
 		break;
 	case 0xdb:
 		this->DecodeBoundingBox();
-		return true;
+		return !stopProcessing;
 		break;
 	case 0xff:
 		//Used in delta encoding information
 		this->ResetDeltaCoding();
-		return true; //Reset code
+		return !stopProcessing; //Reset code
 		break;
 	case 0xfe:
-		return true; //End of file
+		return !stopProcessing; //End of file
 		break;
 	}
 	if(code >= 0xF0 && code <= 0xFF)
@@ -184,7 +185,7 @@ bool O5mDecode::DecodeNext()
 	uint64_t length = DecodeVarint(this->handle);
 	tmpBuff.resize(length);
 	ReadExactLength(this->handle, &tmpBuff[0], length);
-	return true;
+	return !stopProcessing;
 }
 
 void O5mDecode::DecodeHeader()
@@ -197,7 +198,7 @@ void O5mDecode::DecodeHeader()
 	fileType.resize(length);
 	ReadExactLength(this->handle, &fileType[0], length);
 	if(this->output != NULL)
-		this->output->StoreIsDiff("o5c2"==fileType);
+		stopProcessing |= this->output->StoreIsDiff("o5c2"==fileType);
 }
 
 void O5mDecode::DecodeBoundingBox()
@@ -213,7 +214,7 @@ void O5mDecode::DecodeBoundingBox()
 	double y2 = DecodeZigzag(this->handle) / 1e7; //lat
 
 	if(this->output != NULL)
-		this->output->StoreBounds(x1, y1, x2, y2);
+		stopProcessing |= this->output->StoreBounds(x1, y1, x2, y2);
 }
 
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
@@ -361,7 +362,7 @@ void O5mDecode::DecodeNode()
 	}
 
 	if(this->output != NULL)
-		this->output->StoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
+		stopProcessing |= this->output->StoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
 }
 
 void O5mDecode::DecodeWay()
@@ -412,7 +413,7 @@ void O5mDecode::DecodeWay()
 	}
 
 	if (this->output != NULL)
-		this->output->StoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
+		stopProcessing |= this->output->StoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
 }
 
 void O5mDecode::DecodeRelation()
@@ -516,7 +517,7 @@ void O5mDecode::DecodeRelation()
 	}
 
 	if(this->output != NULL)
-		this->output->StoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
+		stopProcessing |= this->output->StoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
 			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
 
 }

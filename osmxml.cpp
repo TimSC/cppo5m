@@ -69,6 +69,7 @@ OsmXmlDecodeString::OsmXmlDecodeString()
 	XML_SetUserData(parser, this);
 	XML_SetElementHandler(parser, ::StartElement, ::EndElement);
 	this->firstParseCall = true;
+	stopProcessing = false;
 }
 
 OsmXmlDecodeString::~OsmXmlDecodeString()
@@ -134,12 +135,14 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 			if(it != this->metadataMap.end())
 				maxlon = atof(it->second.c_str());
 
-			output->StoreBounds(minlon, minlat, maxlon, maxlat);
+			stopProcessing |= output->StoreBounds(minlon, minlat, maxlon, maxlat);
 		}
 		else
 		{
 			if(this->lastObjectType != this->currentObjectType)
-				output->Sync();
+			{
+				stopProcessing |= output->Sync();
+			}
 
 			int64_t objId = 0;
 			TagMap::iterator it = this->metadataMap.find("id");
@@ -159,15 +162,15 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 				if(it != this->metadataMap.end())
 					lon = atof(it->second.c_str());
 
-				output->StoreNode(objId, metaData, this->tags, lat, lon);
+				stopProcessing |= output->StoreNode(objId, metaData, this->tags, lat, lon);
 			}
 			else if(this->currentObjectType == "way")
 			{
-				output->StoreWay(objId, metaData, this->tags, this->memObjIds);
+				stopProcessing |= output->StoreWay(objId, metaData, this->tags, this->memObjIds);
 			}
 			else if(this->currentObjectType == "relation")
 			{
-				output->StoreRelation(objId, metaData, this->tags, 
+				stopProcessing |= output->StoreRelation(objId, metaData, this->tags, 
 					this->memObjTypes, this->memObjIds, this->memObjRoles);
 			}
 
@@ -243,6 +246,8 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 	{
 		parseCompletedOk = true;
 	}
+	if(stopProcessing)
+		return false;
 	return !done;
 }
 

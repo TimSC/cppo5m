@@ -20,7 +20,7 @@ protected:
 	TagMap metadataMap, tags;
 	std::vector<int64_t> memObjIds;
 	std::vector<std::string> memObjTypes, memObjRoles;
-	bool firstParseCall, parseCompleted;
+	bool firstParseCall, parseCompleted, stopProcessing;
 
 	void DecodeMetaData(class MetaData &metaData);
 
