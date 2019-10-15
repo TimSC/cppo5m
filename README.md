@@ -31,3 +31,9 @@ o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m 
 
 	gunzip -c data.o5m.gz | ./o5mconvert - --in-o5m
 
+To regenerate sources in the pbf folder:
+
+* protoc -I=proto proto/osmformat.proto --cpp_out=pbf
+
+* protoc -I=proto proto/fileformat.proto --cpp_out=pbf
+
