@@ -1,4 +1,5 @@
 #include "OsmData.h"
+#include "utils.h"
 #include <fstream>
 #include <iostream>
 using namespace std;

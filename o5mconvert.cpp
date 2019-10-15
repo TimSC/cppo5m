@@ -8,6 +8,7 @@
 #include "OsmData.h"
 #include "osmxml.h"
 #include "o5m.h"
+#include "utils.h"
 
 using namespace std;
 namespace po = boost::program_options;

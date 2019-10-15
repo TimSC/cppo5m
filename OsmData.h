@@ -3,10 +3,58 @@
 
 #include <memory>
 #include <set>
-#include "o5m.h"
-#include "osmxml.h"
+#include <map>
+#include <vector>
+#include <string>
 
-// ****** generic osm data store ******
+typedef std::map<std::string, std::string> TagMap;
+void PrintTagMap(const TagMap &tagMap);
+
+///Simply stores meta data files for a map object
+class MetaData
+{
+public:
+	uint64_t version;
+	int64_t timestamp, changeset;
+	uint64_t uid;
+	std::string username;
+	bool visible, current;
+
+	MetaData();
+	virtual ~MetaData();
+	MetaData( const MetaData &obj);
+	MetaData& operator=(const MetaData &arg);
+};
+
+///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.
+class IDataStreamHandler
+{
+public:
+	virtual ~IDataStreamHandler() {};
+
+	virtual bool Sync() {return false;};
+	virtual bool Reset() {return false;};
+	virtual bool Finish() {return false;};
+
+	virtual bool StoreIsDiff(bool) {return false;};
+	virtual bool StoreBounds(double x1, double y1, double x2, double y2) {return false;};
+	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon) {return false;};
+	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs) {return false;};
+	virtual bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles) {return false;};
+};
+
+class IOsmChangeBlock
+{
+public:
+	virtual ~IOsmChangeBlock() {};
+
+	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused) {};
+	virtual void StoreOsmData(const class OsmObject *obj, bool ifunused) {};
+};
 
 class OsmObject
 {
@@ -62,7 +110,8 @@ public:
 	void StreamTo(class IDataStreamHandler &enc) const;
 };
 
-///Provides in memory decoding and encoding of o5m binary streams
+// ****** generic osm data store ******
+
 class OsmData : public IDataStreamHandler
 {
 public:
@@ -111,21 +160,6 @@ public:
 	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused);
 	virtual void StoreOsmData(const class OsmObject *obj, bool ifunused);
 };
-
-// Convenience functions: load and save from std::streambuf
-
-void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
-void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
-void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output);
-void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
-void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
-void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi);
-
-// Convenience functions: load from std::string
-
-void LoadFromO5m(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output);
-void LoadFromOsmXml(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output);
-void LoadFromOsmChangeXml(const std::string &fi, std::shared_ptr<class IOsmChangeBlock> output);
 
 #endif //_OSMDATA_H
 

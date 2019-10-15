@@ -50,46 +50,6 @@ void ReadExactLength(std::istream &str, char *out, size_t len)
 	}
 }
 
-MetaData::MetaData()
-{
-	version=0;
-	timestamp=0;
-	changeset=0;
-	uid=0;
-	visible=true;
-	current=true;
-}
-
-MetaData::~MetaData()
-{
-
-}
-
-MetaData::MetaData( const MetaData &obj)
-{
-	*this = obj;
-}
-
-MetaData& MetaData::operator=(const MetaData &a)
-{
-	version = a.version;
-	timestamp = a.timestamp;
-	changeset = a.changeset;
-	uid = a.uid;
-	username = a.username;
-	visible = a.visible;
-	current = a.current;
-	return *this;
-}
-
-void PrintTagMap(const TagMap &tagMap)
-{
-	for(TagMap::const_iterator it = tagMap.begin(); it != tagMap.end(); it++)
-	{
-		std::cout << it->first << "=" << it->second << std::endl;
-	}
-}
-
 // ****** o5m decoder ******
 
 O5mDecode::O5mDecode(std::streambuf &handleIn) : 

@@ -12,28 +12,10 @@
 #ifdef PYTHON_AWARE
 #include <Python.h>
 #endif
+#include "OsmData.h"
 
 void TestDecodeNumber();
 void TestEncodeNumber();
-
-typedef std::map<std::string, std::string> TagMap;
-void PrintTagMap(const TagMap &tagMap);
-
-///Simply stores meta data files for a map object
-class MetaData
-{
-public:
-	uint64_t version;
-	int64_t timestamp, changeset;
-	uint64_t uid;
-	std::string username;
-	bool visible, current;
-
-	MetaData();
-	virtual ~MetaData();
-	MetaData( const MetaData &obj);
-	MetaData& operator=(const MetaData &arg);
-};
 
 ///Decodes a binary o5m stream and fires a series of events to the output object derived from IDataStreamHandler
 class O5mDecode
@@ -84,36 +66,6 @@ public:
 	void DecodeFinish();
 
 	std::shared_ptr<class IDataStreamHandler> output;
-};
-
-///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.
-class IDataStreamHandler
-{
-public:
-	virtual ~IDataStreamHandler() {};
-
-	virtual bool Sync() {return false;};
-	virtual bool Reset() {return false;};
-	virtual bool Finish() {return false;};
-
-	virtual bool StoreIsDiff(bool) {return false;};
-	virtual bool StoreBounds(double x1, double y1, double x2, double y2) {return false;};
-	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double lat, double lon) {return false;};
-	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, const std::vector<int64_t> &refs) {return false;};
-	virtual bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
-		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
-		const std::vector<std::string> &refRoles) {return false;};
-};
-
-class IOsmChangeBlock
-{
-public:
-	virtual ~IOsmChangeBlock() {};
-
-	virtual void StoreOsmData(const std::string &action, const class OsmData &osmData, bool ifunused) {};
-	virtual void StoreOsmData(const class OsmObject *obj, bool ifunused) {};
 };
 
 ///Encodes a stream of map objects into an o5m output binary stream

@@ -8,6 +8,7 @@
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
+#include "OsmData.h"
 using namespace std;
 
 // https://stackoverflow.com/questions/27529570/simple-zlib-c-string-compression-and-decompression
@@ -23,29 +24,28 @@ std::string DecompressData(const std::string &data)
     return decompressed.str();
 }
 
-void DecodeOsmHeader(std::string &decBlob)
+void DecodeOsmHeader(std::string &decBlob,
+	std::shared_ptr<class IDataStreamHandler> output)
 {
 	OSMPBF::HeaderBlock hb;
 	std::istringstream iss(decBlob);
 	bool ok = hb.ParseFromIstream(&iss);
-	cout << "hb ok " << ok << endl;
+	//cout << "hb ok " << ok << endl;
 
 	if(hb.has_bbox())
 	{
 		const OSMPBF::HeaderBBox &bbox = hb.bbox();
 		
 		if(bbox.has_left() and bbox.has_right() and bbox.has_top() and bbox.has_bottom())
-		{
-			cout << "bbox " << bbox.left()*1e-9 << "," << bbox.bottom()*1e-9 << "," 
-				<< bbox.right()*1e-9 << "," << bbox.top()*1e-9 << endl;
-		}
+			output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
 	}
 }
 
 void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	int64_t lat_offset, int64_t lon_offset,
 	int32_t granularity, int32_t date_granularity,
-	const std::vector<std::string> &stringTab)
+	const std::vector<std::string> &stringTab,
+	std::shared_ptr<class IDataStreamHandler> output)
 {
 	vector<map<string, string> > tags;
 	map<string, string> current;
@@ -65,7 +65,7 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 		}
 	}
 
-	for(size_t j=0; j<tags.size(); j++)
+/*	for(size_t j=0; j<tags.size(); j++)
 	{
 		cout << "tags {";
 		for(auto it=tags[j].begin(); it!=tags[j].end(); it++)
@@ -73,7 +73,7 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 			cout << it->first << "=" << it->second << ",";
 		}
 		cout << "}" << endl;
-	} 
+	} */
 
 	int64_t idc = 0, latc = 0, lonc = 0;
 	for(int j=0; j<dense.id_size() and j<dense.lat_size() and j<dense.lon_size(); j++)
@@ -81,13 +81,22 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 		idc += dense.id(j);
 		latc += dense.lat(j);
 		lonc += dense.lon(j);
-		cout << "id " << idc << "," << (1e-9 * (lat_offset + (granularity * latc))) 
-			<< "," << (1e-9 * (lon_offset + (granularity * lonc))) << endl;
+
+		class MetaData metaData;
+		TagMap empty;
+		const TagMap *tagMapPtr = &empty;
+		if(j < tags.size())
+			tagMapPtr = &tags[j];
+		
+		bool ok = output->StoreNode(idc, metaData, 
+			*tagMapPtr, 
+			1e-9 * (lat_offset + (granularity * latc)), 
+			1e-9 * (lon_offset + (granularity * lonc)));
 	}
 
 }
 
-void DecodeOsmData(std::string &decBlob)
+void DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandler> output)
 {
 	OSMPBF::PrimitiveBlock pb;
 	std::istringstream iss(decBlob);
@@ -125,7 +134,7 @@ void DecodeOsmData(std::string &decBlob)
 			const OSMPBF::DenseNodes &dense = pg.dense();
 			DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
 				granularity, date_granularity,
-				stringTab);
+				stringTab, output);
 		}
 
 		cout << "w " << pg.ways_size() << endl;
@@ -137,6 +146,8 @@ void DecodeOsmData(std::string &decBlob)
 int main()
 {
 	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+	shared_ptr<class OsmData> osmData(new class OsmData());
 
 	std::filebuf infi;
 	infi.open("sample.pbf", std::ios::in);
@@ -187,11 +198,15 @@ int main()
 		//cout << decBlob.length() << endl;
 
 		if(headerType == "OSMHeader")
-			DecodeOsmHeader(decBlob);
+			DecodeOsmHeader(decBlob, osmData);
 
 		else if(headerType == "OSMData")
-			DecodeOsmData(decBlob);
+			DecodeOsmData(decBlob, osmData);
 
-	}	
+	}
+
+	cout << "nodes " << osmData->nodes.size() << endl;
+	cout << "ways " << osmData->ways.size() << endl;
+	cout << "relations " << osmData->relations.size() << endl;
 }	
 
