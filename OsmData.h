@@ -27,6 +27,7 @@ public:
 };
 
 ///Defines an interface to handle a stream of map objects. Derive from this to make a result handler.
+///If any functions return true, that indicates the receiver wants to halt processing.
 class IDataStreamHandler
 {
 public:

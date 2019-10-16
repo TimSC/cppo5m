@@ -117,10 +117,61 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 
 		}
 
-		bool ok = output->StoreNode(idc, metaData, 
+		bool halt = output->StoreNode(idc, metaData, 
 			*tagMapPtr, 
 			1e-9 * (lat_offset + (granularity * latc)), 
 			1e-9 * (lon_offset + (granularity * lonc)));
+	}
+
+}
+
+void DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
+	int32_t date_granularity,
+	const std::vector<std::string> &stringTab,
+	std::shared_ptr<class IDataStreamHandler> output)
+{
+	for(int i=0; i<pg.ways_size(); i++)
+	{
+		const OSMPBF::Way &way = pg.ways(i);
+		class MetaData metaData;
+		TagMap tags;
+		std::vector<int64_t> refs;
+		
+		for(int j=0; j<way.keys_size() and j<way.vals_size(); j++)
+		{
+			uint32_t keyIndex = way.keys(j);
+			uint32_t valIndex = way.vals(j);
+			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
+				tags[stringTab[keyIndex]] = stringTab[valIndex];
+		}
+
+		if(way.has_info())
+		{
+			const OSMPBF::Info &info = way.info();
+
+			if(info.has_version())
+				metaData.version = info.version();
+			if(info.has_timestamp())
+				metaData.timestamp = info.timestamp()*date_granularity / 1000;
+			if(info.has_changeset())
+				metaData.changeset = info.changeset();
+			if(info.has_uid())
+				metaData.uid = info.uid();
+			if(info.has_user_sid() and info.user_sid() > 0 and info.user_sid() < stringTab.size())
+				metaData.username = stringTab[info.user_sid()];
+			if(info.has_visible())
+				metaData.visible = info.visible();
+		}
+
+		int64_t refsc = 0;
+		for(int j=0; j<way.refs_size(); j++)
+		{
+			refsc += way.refs(j);
+			refs.push_back(refsc);
+		}
+		
+		bool halt = output->StoreWay(way.id(), metaData, 
+			tags, refs);
 	}
 
 }
@@ -157,7 +208,7 @@ void DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandle
 		const OSMPBF::PrimitiveGroup& pg = pb.primitivegroup(i);
 
 		cout << "n " << pg.nodes_size() << endl;
-		cout << "dn " << pg.has_dense() << endl;
+		//cout << "dn " << pg.has_dense() << endl;
 		if(pg.has_dense())
 		{
 			const OSMPBF::DenseNodes &dense = pg.dense();
@@ -167,6 +218,10 @@ void DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandle
 		}
 
 		cout << "w " << pg.ways_size() << endl;
+		if(pg.ways_size() > 0)
+			DecodeOsmWays(pg, date_granularity,
+				stringTab, output);
+
 		cout << "r " << pg.relations_size() << endl;
 		cout << "cs " << pg.changesets_size() << endl;
 	}
