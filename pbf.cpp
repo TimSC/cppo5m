@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include "pbf/fileformat.pb.h"
 #include "pbf/osmformat.pb.h"
 #include <arpa/inet.h>
@@ -25,24 +26,82 @@ std::string DecompressData(const std::string &data)
     return decompressed.str();
 }
 
-void DecodeOsmHeader(std::string &decBlob,
+bool DecodeOsmHeader(std::string &decBlob,
 	std::shared_ptr<class IDataStreamHandler> output)
 {
 	OSMPBF::HeaderBlock hb;
 	std::istringstream iss(decBlob);
 	bool ok = hb.ParseFromIstream(&iss);
-	//cout << "hb ok " << ok << endl;
+	if(!ok)
+		throw runtime_error("Error decoding PBF HeaderBlock");
 
 	if(hb.has_bbox())
 	{
 		const OSMPBF::HeaderBBox &bbox = hb.bbox();
 		
 		if(bbox.has_left() and bbox.has_right() and bbox.has_top() and bbox.has_bottom())
-			output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
+		{
+			bool halt = output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
+			if(halt) return true;
+		}
 	}
+	return false;
 }
 
-void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
+void DecodeOsmInfo(const OSMPBF::Info &info, int32_t date_granularity, const std::vector<std::string> &stringTab, class MetaData &out)
+{
+	if(info.has_version())
+		out.version = info.version();
+	if(info.has_timestamp())
+		out.timestamp = info.timestamp()*date_granularity / 1000;
+	if(info.has_changeset())
+		out.changeset = info.changeset();
+	if(info.has_uid())
+		out.uid = info.uid();
+	if(info.has_user_sid() and info.user_sid() > 0 and info.user_sid() < stringTab.size())
+		out.username = stringTab[info.user_sid()];
+	if(info.has_visible())
+		out.visible = info.visible();
+}
+
+bool DecodeOsmNodes(const OSMPBF::PrimitiveGroup& pg,
+	int64_t lat_offset, int64_t lon_offset,
+	int32_t granularity, 
+	int32_t date_granularity,
+	const std::vector<std::string> &stringTab,
+	std::shared_ptr<class IDataStreamHandler> output)
+{
+	for(int i=0; i<pg.nodes_size(); i++)
+	{
+		const OSMPBF::Node &node = pg.nodes(i);
+		class MetaData metaData;
+		TagMap tags;
+		
+		for(int j=0; j<node.keys_size() and j<node.vals_size(); j++)
+		{
+			uint32_t keyIndex = node.keys(j);
+			uint32_t valIndex = node.vals(j);
+			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
+				tags[stringTab[keyIndex]] = stringTab[valIndex];
+		}
+
+		if(node.has_info())
+		{
+			const OSMPBF::Info &info = node.info();
+			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
+		}
+
+		bool halt = output->StoreNode(node.id(), metaData, 
+			tags, 
+			1e-9 * (lat_offset + (granularity * node.lat())), 
+			1e-9 * (lon_offset + (granularity * node.lon())));
+		if(halt)
+			return true;
+	}
+	return false;
+}
+
+bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	int64_t lat_offset, int64_t lon_offset,
 	int32_t granularity, int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
@@ -121,11 +180,13 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 			*tagMapPtr, 
 			1e-9 * (lat_offset + (granularity * latc)), 
 			1e-9 * (lon_offset + (granularity * lonc)));
+		if(halt)
+			return true;
 	}
-
+	return false;
 }
 
-void DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
+bool DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
 	std::shared_ptr<class IDataStreamHandler> output)
@@ -148,19 +209,7 @@ void DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 		if(way.has_info())
 		{
 			const OSMPBF::Info &info = way.info();
-
-			if(info.has_version())
-				metaData.version = info.version();
-			if(info.has_timestamp())
-				metaData.timestamp = info.timestamp()*date_granularity / 1000;
-			if(info.has_changeset())
-				metaData.changeset = info.changeset();
-			if(info.has_uid())
-				metaData.uid = info.uid();
-			if(info.has_user_sid() and info.user_sid() > 0 and info.user_sid() < stringTab.size())
-				metaData.username = stringTab[info.user_sid()];
-			if(info.has_visible())
-				metaData.visible = info.visible();
+			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
 		}
 
 		int64_t refsc = 0;
@@ -172,16 +221,82 @@ void DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 		
 		bool halt = output->StoreWay(way.id(), metaData, 
 			tags, refs);
+		if(halt)
+			return true;
 	}
-
+	return false;
 }
 
-void DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandler> output)
+bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
+	int32_t date_granularity,
+	const std::vector<std::string> &stringTab,
+	std::shared_ptr<class IDataStreamHandler> output)
+{
+	for(int i=0; i<pg.relations_size(); i++)
+	{
+		const OSMPBF::Relation &relation = pg.relations(i);
+		class MetaData metaData;
+		TagMap tags;
+		std::vector<std::string> refTypeStrs;
+		std::vector<int64_t> refIds;
+		std::vector<std::string> refRoles;
+		
+		for(int j=0; j<relation.keys_size() and j<relation.vals_size(); j++)
+		{
+			uint32_t keyIndex = relation.keys(j);
+			uint32_t valIndex = relation.vals(j);
+			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
+				tags[stringTab[keyIndex]] = stringTab[valIndex];
+		}
+
+		if(relation.has_info())
+		{
+			const OSMPBF::Info &info = relation.info();
+			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
+		}
+
+		int64_t memidsc = 0;
+		for(int j=0; j<relation.memids_size() and j<relation.types_size() and j<relation.roles_sid_size(); j++)
+		{
+			memidsc += relation.memids(j);
+			switch(relation.types(j))
+			{
+				case OSMPBF::Relation_MemberType_NODE:
+					refTypeStrs.push_back("node");
+					break;
+				case OSMPBF::Relation_MemberType_WAY:
+					refTypeStrs.push_back("way");
+					break;
+				case OSMPBF::Relation_MemberType_RELATION:
+					refTypeStrs.push_back("relation");
+					break;
+				default:
+					refTypeStrs.push_back("");
+					break;
+			}
+			refIds.push_back(memidsc);
+			int32_t roleIndex = relation.roles_sid(j);
+			if(roleIndex > 0 and roleIndex < stringTab.size())
+				refRoles.push_back(stringTab[roleIndex]);
+			else
+				refRoles.push_back("");
+		}
+		
+		bool halt = output->StoreRelation(relation.id(), metaData, 
+			tags, refTypeStrs, refIds, refRoles);
+		if(halt)
+			return true;	
+	}
+	return false;
+}
+
+bool DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandler> output)
 {
 	OSMPBF::PrimitiveBlock pb;
 	std::istringstream iss(decBlob);
 	bool ok = pb.ParseFromIstream(&iss);
-	cout << "pb ok " << ok << endl;
+	if(!ok)
+		throw runtime_error("Error decoding PBF PrimitiveBlock");
 
 	std::vector<std::string> stringTab;
 	if(pb.has_stringtable())
@@ -205,26 +320,36 @@ void DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandle
 	int pbs = pb.primitivegroup_size();
 	for(int i=0; i<pbs; i++)
 	{
+		bool halt = false;
 		const OSMPBF::PrimitiveGroup& pg = pb.primitivegroup(i);
 
-		cout << "n " << pg.nodes_size() << endl;
-		//cout << "dn " << pg.has_dense() << endl;
+		if(pg.nodes_size() > 0)
+			halt = DecodeOsmNodes(pg, lat_offset, lon_offset,
+				granularity, date_granularity,
+				stringTab, output);	
+
 		if(pg.has_dense())
 		{
 			const OSMPBF::DenseNodes &dense = pg.dense();
-			DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
+			halt = DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
 				granularity, date_granularity,
 				stringTab, output);
 		}
 
-		cout << "w " << pg.ways_size() << endl;
 		if(pg.ways_size() > 0)
-			DecodeOsmWays(pg, date_granularity,
+			halt = DecodeOsmWays(pg, date_granularity,
 				stringTab, output);
 
-		cout << "r " << pg.relations_size() << endl;
-		cout << "cs " << pg.changesets_size() << endl;
+		if(pg.relations_size() > 0)
+			halt = DecodeOsmRelations(pg, date_granularity,
+				stringTab, output);		
+
+		//Changeset decoding not supported
+
+		if(halt)
+			return true;
 	}
+	return false;
 }
 
 int main()
@@ -242,7 +367,6 @@ int main()
 		int32_t blobHeaderLenNbo;
 		infi.sgetn ((char*)&blobHeaderLenNbo, sizeof(int32_t));
 		int32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
-		cout << blobHeaderLen << endl;
 
 		std::string refData;
 		refData.resize(blobHeaderLen);
@@ -251,11 +375,10 @@ int main()
 		OSMPBF::BlobHeader header;
 		std::istringstream iss(refData);
 		bool ok = header.ParseFromIstream(&iss);
+		if(!ok)
+			throw runtime_error("Error decoding PBF BlobHeader");
 
 		std::string headerType = header.type();
-		//cout << headerType << endl;
-		//cout << header.indexdata() << endl;
-		//cout << header.datasize() << endl;
 
 		int32_t blobSize = header.datasize();
 		std::string refData2;
@@ -265,28 +388,23 @@ int main()
 		OSMPBF::Blob blob;
 		std::istringstream iss2(refData2);
 		ok = blob.ParseFromIstream(&iss2);
-
-		/*cout << "has_raw" << blob.has_raw() << endl;
-		cout << "has_raw_size" << blob.has_raw_size();
-		if(blob.has_raw_size())
-			cout << " of " << blob.raw_size();
-		cout << endl;
-		cout << "has_zlib_data" << blob.has_zlib_data() << endl;
-		cout << "has_lzma_data" << blob.has_lzma_data() << endl;*/
+		if(!ok)
+			throw runtime_error("Error decoding PBF Blob");
 
 		string decBlob;
 		if(blob.has_raw())
 			decBlob = blob.raw();
 		else if(blob.has_zlib_data())
 			decBlob = DecompressData(blob.zlib_data());
-		//cout << decBlob.length() << endl;
 
+		bool halt = false;
 		if(headerType == "OSMHeader")
-			DecodeOsmHeader(decBlob, osmData);
+			halt = DecodeOsmHeader(decBlob, osmData);
 
 		else if(headerType == "OSMData")
-			DecodeOsmData(decBlob, osmData);
+			halt = DecodeOsmData(decBlob, osmData);
 
+		if(halt) break;
 	}
 
 	cout << "nodes " << osmData->nodes.size() << endl;
