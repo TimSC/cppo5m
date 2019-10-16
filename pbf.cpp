@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cmath>
 #include <stdexcept>
 #include "pbf/fileformat.pb.h"
 #include "pbf/osmformat.pb.h"
@@ -14,6 +15,18 @@
 using namespace std;
 
 // https://stackoverflow.com/questions/27529570/simple-zlib-c-string-compression-and-decompression
+std::string CompressData(const std::string &data)
+{
+    std::stringstream compressed;
+    std::stringstream decompressed;
+    decompressed << data;
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
+    out.push(boost::iostreams::zlib_compressor());
+    out.push(decompressed);
+    boost::iostreams::copy(out, compressed);
+    return compressed.str();
+}
+
 std::string DecompressData(const std::string &data)
 {
     std::stringstream compressed;
@@ -318,7 +331,7 @@ bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 PbfDecode::PbfDecode(std::streambuf &handleIn):
 	handle(&handleIn)
 {
-	
+
 }
 
 PbfDecode::~PbfDecode()
@@ -465,11 +478,16 @@ bool PbfDecode::CheckOutputType(const char *objType)
 	return halt;
 }
 
-// ******************************************
+// *******************************************
 
 PbfEncodeBase::PbfEncodeBase()
 {
-
+	encodeMetaData = true;
+	encodeHistorical = false;
+	maxGroupObjects = 8000;
+	headerWritten = false;
+	compressUsingZLib = true;
+	writingProgram = "cppo5m";
 }
 
 PbfEncodeBase::~PbfEncodeBase()
@@ -500,18 +518,19 @@ bool PbfEncodeBase::StoreIsDiff(bool)
 
 bool PbfEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
+	buffer.StoreBounds(x1, y1, x2, y2);
 	return false;
 }
 
 bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, double lat, double lon)
 {
-	buffer.StoreNode(objId, metaData, tags, lat, lon);
-
 	if(prevObjType != "n" and prevObjType.size() > 0)
 	{
 		this->EncodeBuffer();
 	}
+
+	buffer.StoreNode(objId, metaData, tags, lat, lon);
 
 	prevObjType = "n";
 	return false;
@@ -520,12 +539,12 @@ bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 bool PbfEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, const std::vector<int64_t> &refs)
 {
-	buffer.StoreWay(objId, metaData, tags, refs);
-
 	if(prevObjType != "w" and prevObjType.size() > 0)
 	{
 		this->EncodeBuffer();
 	}
+
+	buffer.StoreWay(objId, metaData, tags, refs);
 
 	prevObjType = "w";
 	return false;
@@ -535,12 +554,12 @@ bool PbfEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData,
 	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 	const std::vector<std::string> &refRoles)
 {
-	buffer.StoreRelation(objId, metaData, tags, refTypeStrs, refIds, refRoles);
-
 	if(prevObjType != "r" and prevObjType.size() > 0)
 	{
 		this->EncodeBuffer();
 	}
+
+	buffer.StoreRelation(objId, metaData, tags, refTypeStrs, refIds, refRoles);
 
 	prevObjType = "r";
 	return false;
@@ -556,12 +575,226 @@ void PbfEncodeBase::operator<< (const std::string &val)
 
 }
 
+void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char *type)
+{
+	cout << type << "," << blobPayload.size() << endl;
+
+	OSMPBF::Blob blob;
+	blob.set_raw_size(blobPayload.size());
+	if(this->compressUsingZLib)
+		blob.set_zlib_data(CompressData(blobPayload));
+	else
+		blob.set_raw(blobPayload);
+	std::string packedBlob;
+	blob.SerializeToString(&packedBlob);
+	
+	OSMPBF::BlobHeader header;
+	header.set_type(type);
+	header.set_datasize(packedBlob.size());
+	std::string packedHeader;
+	header.SerializeToString(&packedHeader);
+
+	int32_t headerSizePk = htonl(packedHeader.size());
+	this->write ((char*)&headerSizePk, sizeof(int32_t));
+	this->write (packedHeader.c_str(), packedHeader.size());
+	this->write (packedBlob.c_str(), packedBlob.size());
+}
+
 void PbfEncodeBase::EncodeBuffer()
 {
-	//TODO
 	cout << "EncodeBuffer()" << endl;
 
+	if(!headerWritten)
+	{
+		std::string hbEncoded;
+		this->EncodeHeaderBlock(hbEncoded);
+		this->WriteBlobPayload(hbEncoded, "OSMHeader");
+		this->headerWritten = true;
+	}
+
+	int countTypes = 0;
+	countTypes += this->buffer.nodes.size() > 0;
+	countTypes += this->buffer.ways.size() > 0;
+	countTypes += this->buffer.relations.size() > 0;
+	if(countTypes == 0)
+		return;
+	if(countTypes > 1)
+	{
+		std::string errStr = "If you're seeing this, the code is in what I thought was an unreachable state.";
+		errStr += " On a deep level, I know I'm not up to this task. I'm so sorry.";
+		throw logic_error(errStr);
+	}
+	if(this->buffer.nodes.size() > 0)
+	{
+		std::string denseNodes;
+		EncodePbfDenseNodes(this->buffer.nodes, denseNodes);
+		this->WriteBlobPayload(denseNodes, "OSMData");
+	}
+
 	this->buffer.Clear();
+}
+
+void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
+{
+	OSMPBF::HeaderBlock hb;
+
+	hb.add_required_features("OsmSchema-V0.6");
+	hb.add_required_features("DenseNodes");
+	if(this->encodeHistorical)
+		hb.add_required_features("HistoricalInformation");
+	hb.set_writingprogram(this->writingProgram);
+
+	if(buffer.bounds.size() > 0 and buffer.bounds[0].size() >= 4)
+	{
+		OSMPBF::HeaderBBox *bbox = hb.mutable_bbox();
+		std::vector<double> srcBbox = buffer.bounds[0]; //Only the first bbox is considered
+
+		bbox->set_left(std::round(srcBbox[0] / 1e-9));
+		bbox->set_bottom(std::round(srcBbox[1] / 1e-9));
+		bbox->set_right(std::round(srcBbox[2] / 1e-9));
+		bbox->set_top(std::round(srcBbox[3] / 1e-9));
+	}
+
+	hb.SerializeToString(&out);
+}
+
+void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, std::string &out)
+{
+	//Create string table
+	std::map<std::string, std::uint32_t> strFreq;
+	size_t maxNodesToProcess = nodes.size();
+
+	size_t processed = 0;
+	for(size_t i=0; i<maxNodesToProcess; i++)
+	{
+		const class OsmNode &n = nodes[i];
+		const TagMap &tags = n.tags;
+		for(auto it = tags.begin(); it != tags.end(); it++)
+		{
+			auto it2 = strFreq.find(it->first);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[it->first] = 1;
+
+			it2 = strFreq.find(it->second);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[it->second] = 1;
+		}
+
+		if(this->encodeMetaData)
+		{
+			auto it2 = strFreq.find(n.metaData.username);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[n.metaData.username] = 1;	
+		}
+
+		processed = i+1;
+		if(strFreq.size() >= INT32_MAX - 5)
+			break; //Stop because we have a full string table
+	}
+	maxNodesToProcess = processed;
+
+	std::map<std::uint32_t, std::vector<std::string> > strByFreq;
+	for(auto it=strFreq.begin(); it != strFreq.end(); it++)
+	{
+		strByFreq[it->second].push_back(it->first);
+	}
+	vector<std::uint32_t> freqBins;
+	for(auto it = strByFreq.begin(); it != strByFreq.end(); it++)
+	{
+		freqBins.push_back(it->first);
+	}
+	std::sort(freqBins.begin(), freqBins.end(), greater<int>()); 
+
+	//Add strings to block
+	OSMPBF::PrimitiveBlock pb;
+	OSMPBF::StringTable *st = pb.mutable_stringtable();
+	
+	st->add_s(""); //First string is always empty in pbf
+	for(size_t i=0; i<freqBins.size(); i++)
+	{
+		std::vector<std::string> &bin = strByFreq[freqBins[i]];
+		std::sort(bin.begin(), bin.end());
+		for(size_t j=0; j<bin.size(); j++)
+			st->add_s(bin[j]);
+	}
+
+	//Index strings for fast lookup
+	std::map<std::string, int32_t> strIndex;
+	for(int i=1; i<st->s_size(); i++)
+	{
+		strIndex[st->s(i)] = i;
+	}
+
+	//Write nodes in groups
+	size_t nodec = 0;
+	while(nodec < maxNodesToProcess)
+	{
+		size_t nodesInGroup = maxNodesToProcess - nodec;
+		if(nodesInGroup > maxGroupObjects)
+			 nodesInGroup = maxGroupObjects;
+
+		int64_t lat_offset = 0, lon_offset = 0;
+		int32_t granularity = 100, date_granularity=1000;
+
+		//Check if all tags are empty
+		//TODO
+
+		OSMPBF::PrimitiveGroup *pg = pb.add_primitivegroup();
+		OSMPBF::DenseNodes *dn = pg->mutable_dense();
+		OSMPBF::DenseInfo *di = nullptr; 
+		if(this->encodeMetaData)
+			di = dn->mutable_denseinfo();
+
+		int64_t idc = 0, latc = 0, lonc = 0, timestampc = 0, changesetc = 0;
+		int32_t uidc = 0, user_sidc = 0;
+		for(size_t i=nodec; i<nodec+nodesInGroup; i++)
+		{
+			const class OsmNode &n = nodes[i];
+			dn->add_id(n.objId-idc);
+			idc = n.objId;
+			int64_t lati = std::round((n.lat / 1e-9) - lat_offset) / granularity;
+			dn->add_lat(lati - latc);
+			latc = lati;
+			int64_t loni = std::round((n.lon / 1e-9) - lon_offset) / granularity;
+			dn->add_lon(loni - lonc);
+			lonc = loni;
+
+			const TagMap &tags = n.tags;
+			for(auto it = tags.begin(); it != tags.end(); it++)
+			{
+				dn->add_keys_vals(strIndex[it->first]);
+				dn->add_keys_vals(strIndex[it->first]);
+			}
+			dn->add_keys_vals(0);
+
+			if(this->encodeMetaData)
+			{
+				di->add_version(n.metaData.version);
+				int64_t ts = n.metaData.timestamp * 1000 / date_granularity;
+				di->add_timestamp(ts - timestampc);
+				timestampc = ts;
+				di->add_changeset(n.metaData.changeset - changesetc);
+				changesetc = n.metaData.changeset;
+				di->add_uid(n.metaData.uid - uidc);
+				int32_t si = strIndex[n.metaData.username];
+				di->add_user_sid(si-user_sidc);
+				user_sidc = si;
+
+				if(this->encodeHistorical)
+					di->add_visible(n.metaData.visible);
+			}
+		}
+
+		nodec += nodesInGroup;
+	}
+
+	pb.SerializeToString(&out);
 }
 
 // *************************************
