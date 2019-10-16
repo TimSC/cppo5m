@@ -9,6 +9,7 @@
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
 #include "OsmData.h"
+#include "utils.h"
 using namespace std;
 
 // https://stackoverflow.com/questions/27529570/simple-zlib-c-string-compression-and-decompression
@@ -47,6 +48,7 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	const std::vector<std::string> &stringTab,
 	std::shared_ptr<class IDataStreamHandler> output)
 {
+	//Decode tags
 	vector<map<string, string> > tags;
 	map<string, string> current;
 	for(int j=0; j<dense.keys_vals_size(); j++)
@@ -65,17 +67,8 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 		}
 	}
 
-/*	for(size_t j=0; j<tags.size(); j++)
-	{
-		cout << "tags {";
-		for(auto it=tags[j].begin(); it!=tags[j].end(); it++)
-		{
-			cout << it->first << "=" << it->second << ",";
-		}
-		cout << "}" << endl;
-	} */
-
-	int64_t idc = 0, latc = 0, lonc = 0;
+	int64_t idc = 0, latc = 0, lonc = 0, timestampc = 0, changesetc = 0;
+	int32_t uidc = 0, user_sidc = 0;
 	for(int j=0; j<dense.id_size() and j<dense.lat_size() and j<dense.lon_size(); j++)
 	{
 		idc += dense.id(j);
@@ -88,6 +81,42 @@ void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 		if(j < tags.size())
 			tagMapPtr = &tags[j];
 		
+		if(dense.has_denseinfo())
+		{
+			const OSMPBF::DenseInfo &di = dense.denseinfo();
+			if(j < di.version_size())
+				metaData.version = di.version(j);
+
+			if(j < di.timestamp_size())
+			{
+				timestampc += di.timestamp(j);
+				metaData.timestamp = timestampc*date_granularity / 1000;
+			}
+
+			if(j < di.changeset_size())
+			{
+				changesetc += di.changeset(j);
+				metaData.changeset = changesetc;
+			}
+
+			if(j < di.uid_size())
+			{
+				uidc += di.uid(j);
+				metaData.uid = uidc;
+			}
+
+			if(j < di.user_sid_size())
+			{
+				user_sidc += di.user_sid(j);
+				if(user_sidc > 0 and user_sidc <= stringTab.size())
+					metaData.username = stringTab[user_sidc];
+			}
+
+			if(j < di.visible_size())
+				metaData.visible = di.visible(j);
+
+		}
+
 		bool ok = output->StoreNode(idc, metaData, 
 			*tagMapPtr, 
 			1e-9 * (lat_offset + (granularity * latc)), 
@@ -208,5 +237,10 @@ int main()
 	cout << "nodes " << osmData->nodes.size() << endl;
 	cout << "ways " << osmData->ways.size() << endl;
 	cout << "relations " << osmData->relations.size() << endl;
+
+	std::filebuf outfi;
+	outfi.open("pbftest.osm", std::ios::out);
+	SaveToOsmXml(*osmData.get(), outfi);
+	outfi.close();
 }	
 

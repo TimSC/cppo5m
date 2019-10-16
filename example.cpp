@@ -20,8 +20,8 @@ int main()
 	cout << "Written o5mtest2.o5m" << endl;
 
 	std::filebuf outfi2;
-	outfi.open("o5mtest2.osm", std::ios::out);
-	SaveToOsmXml(*osmData, outfi);
-	outfi.close();
+	outfi2.open("o5mtest2.osm", std::ios::out);
+	SaveToOsmXml(*osmData, outfi2);
+	outfi2.close();
 	cout << "Written o5mtest2.osm" << endl;
 }
