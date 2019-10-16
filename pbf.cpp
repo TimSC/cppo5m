@@ -488,6 +488,9 @@ PbfEncodeBase::PbfEncodeBase()
 	headerWritten = false;
 	compressUsingZLib = true;
 	writingProgram = "cppo5m";
+	maxPayloadSize = 32 * 1024 * 1024;
+	maxHeaderSize = 64 * 1024;
+	optimalDenseNodes = 1200000;
 }
 
 PbfEncodeBase::~PbfEncodeBase()
@@ -497,6 +500,7 @@ PbfEncodeBase::~PbfEncodeBase()
 
 bool PbfEncodeBase::Sync()
 {
+	EncodeBuffer();
 	return false;
 }
 
@@ -526,9 +530,10 @@ bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 	const TagMap &tags, double lat, double lon)
 {
 	if(prevObjType != "n" and prevObjType.size() > 0)
-	{
 		this->EncodeBuffer();
-	}
+
+	if(buffer.nodes.size() >= optimalDenseNodes)
+		this->EncodeBuffer();
 
 	buffer.StoreNode(objId, metaData, tags, lat, lon);
 
@@ -578,6 +583,8 @@ void PbfEncodeBase::operator<< (const std::string &val)
 void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char *type)
 {
 	cout << type << "," << blobPayload.size() << endl;
+	if(blobPayload.size() > this->maxPayloadSize)
+		throw runtime_error("Blob payload size exceeds what PBF allows");
 
 	OSMPBF::Blob blob;
 	blob.set_raw_size(blobPayload.size());
@@ -587,7 +594,7 @@ void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char 
 		blob.set_raw(blobPayload);
 	std::string packedBlob;
 	blob.SerializeToString(&packedBlob);
-	
+
 	OSMPBF::BlobHeader header;
 	header.set_type(type);
 	header.set_datasize(packedBlob.size());
@@ -627,8 +634,12 @@ void PbfEncodeBase::EncodeBuffer()
 	if(this->buffer.nodes.size() > 0)
 	{
 		std::string denseNodes;
-		EncodePbfDenseNodes(this->buffer.nodes, denseNodes);
-		this->WriteBlobPayload(denseNodes, "OSMData");
+		size_t nodesc = 0;
+		while(nodesc < this->buffer.nodes.size())
+		{
+			EncodePbfDenseNodesSizeLimited(this->buffer.nodes, nodesc, denseNodes);
+			this->WriteBlobPayload(denseNodes, "OSMData");
+		}
 	}
 
 	this->buffer.Clear();
@@ -656,16 +667,23 @@ void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
 	}
 
 	hb.SerializeToString(&out);
+
+	if(out.size() > this->maxHeaderSize)
+		throw runtime_error("HeaderBlock size exceeds what PBF allows");
 }
 
-void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, std::string &out)
+void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, size_t &nodec, uint32_t limitGroups, 
+	std::string &out, uint32_t &countGroupsOut)
 {
 	//Create string table
 	std::map<std::string, std::uint32_t> strFreq;
-	size_t maxNodesToProcess = nodes.size();
+	size_t maxNodesToProcess = nodes.size()-nodec;
+	if(maxNodesToProcess > this->optimalDenseNodes)
+		maxNodesToProcess = this->optimalDenseNodes;
+	const size_t startNodec = nodec;
 
 	size_t processed = 0;
-	for(size_t i=0; i<maxNodesToProcess; i++)
+	for(size_t i=startNodec; i<startNodec + maxNodesToProcess; i++)
 	{
 		const class OsmNode &n = nodes[i];
 		const TagMap &tags = n.tags;
@@ -693,11 +711,11 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 				strFreq[n.metaData.username] = 1;	
 		}
 
-		processed = i+1;
+		processed = i;
 		if(strFreq.size() >= INT32_MAX - 5)
 			break; //Stop because we have a full string table
 	}
-	maxNodesToProcess = processed;
+	maxNodesToProcess = processed+1-startNodec;
 
 	std::map<std::uint32_t, std::vector<std::string> > strByFreq;
 	for(auto it=strFreq.begin(); it != strFreq.end(); it++)
@@ -732,10 +750,12 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	}
 
 	//Write nodes in groups
-	size_t nodec = 0;
-	while(nodec < maxNodesToProcess)
+	bool groupCountOk = true;
+	size_t stopIndex = startNodec+maxNodesToProcess;
+	countGroupsOut = 0;
+	while(nodec < stopIndex and groupCountOk)
 	{
-		size_t nodesInGroup = maxNodesToProcess - nodec;
+		size_t nodesInGroup = stopIndex - nodec;
 		if(nodesInGroup > maxGroupObjects)
 			 nodesInGroup = maxGroupObjects;
 
@@ -769,7 +789,7 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 			for(auto it = tags.begin(); it != tags.end(); it++)
 			{
 				dn->add_keys_vals(strIndex[it->first]);
-				dn->add_keys_vals(strIndex[it->first]);
+				dn->add_keys_vals(strIndex[it->second]);
 			}
 			dn->add_keys_vals(0);
 
@@ -791,10 +811,33 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 			}
 		}
 
+		countGroupsOut ++;
 		nodec += nodesInGroup;
+		if(limitGroups > 0 and countGroupsOut >= limitGroups)
+			groupCountOk = false;
 	}
 
+	//First attempt at encoding
 	pb.SerializeToString(&out);
+}
+
+void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNode> &nodes, size_t &nodec, std::string &out)
+{
+	const size_t startNodec = nodec;
+	uint32_t countGroups = 0;
+	this->EncodePbfDenseNodes(nodes, nodec, 0, out, countGroups);
+
+	uint32_t groupLimit = countGroups;
+	while(out.size() > maxPayloadSize)
+	{
+		//Payload is too big, so we need to reencode by limiting number of groups
+		groupLimit /= 2;
+		nodec = startNodec;
+		this->EncodePbfDenseNodes(nodes, nodec, groupLimit, out, countGroups);
+
+		if(out.size() > maxPayloadSize and groupLimit <= 1)
+			throw runtime_error("Failed to encode nodes without breaking maxPayloadSize limit");
+	}
 }
 
 // *************************************
