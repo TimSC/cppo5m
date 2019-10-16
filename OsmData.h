@@ -33,7 +33,11 @@ class IDataStreamHandler
 public:
 	virtual ~IDataStreamHandler() {};
 
+	///Add syncronize code to output (if supported). Always call Reset immediately after a Sync. This
+	///is only used by o5m and generally only when changing between object types in the stream.
 	virtual bool Sync() {return false;};
+
+	///Tells encoder to reset its counters (if supported)
 	virtual bool Reset() {return false;};
 	virtual bool Finish() {return false;};
 

@@ -142,6 +142,7 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 			if(this->lastObjectType != this->currentObjectType)
 			{
 				stopProcessing |= output->Sync();
+				stopProcessing |= output->Reset();
 			}
 
 			int64_t objId = 0;

@@ -54,7 +54,9 @@ bool DecodeOsmHeader(std::string &decBlob,
 		
 		if(bbox.has_left() and bbox.has_right() and bbox.has_top() and bbox.has_bottom())
 		{
-			bool halt = output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
+			bool halt = false;
+			if(output)
+				output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
 			if(halt) return true;
 		}
 	}
@@ -104,10 +106,12 @@ bool DecodeOsmNodes(const OSMPBF::PrimitiveGroup& pg,
 			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
 		}
 
-		bool halt = output->StoreNode(node.id(), metaData, 
-			tags, 
-			1e-9 * (lat_offset + (granularity * node.lat())), 
-			1e-9 * (lon_offset + (granularity * node.lon())));
+		bool halt = false;
+		if(output)
+			output->StoreNode(node.id(), metaData, 
+				tags, 
+				1e-9 * (lat_offset + (granularity * node.lat())), 
+				1e-9 * (lon_offset + (granularity * node.lon())));
 		if(halt)
 			return true;
 	}
@@ -189,10 +193,12 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 
 		}
 
-		bool halt = output->StoreNode(idc, metaData, 
-			*tagMapPtr, 
-			1e-9 * (lat_offset + (granularity * latc)), 
-			1e-9 * (lon_offset + (granularity * lonc)));
+		bool halt = false;
+		if(output)
+			output->StoreNode(idc, metaData, 
+				*tagMapPtr, 
+				1e-9 * (lat_offset + (granularity * latc)), 
+				1e-9 * (lon_offset + (granularity * lonc)));
 		if(halt)
 			return true;
 	}
@@ -232,8 +238,10 @@ bool DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 			refs.push_back(refsc);
 		}
 		
-		bool halt = output->StoreWay(way.id(), metaData, 
-			tags, refs);
+		bool halt = false;
+		if(output)
+			output->StoreWay(way.id(), metaData, 
+				tags, refs);
 		if(halt)
 			return true;
 	}
@@ -295,72 +303,12 @@ bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 				refRoles.push_back("");
 		}
 		
-		bool halt = output->StoreRelation(relation.id(), metaData, 
-			tags, refTypeStrs, refIds, refRoles);
+		bool halt = false;
+		if(output)
+			output->StoreRelation(relation.id(), metaData, 
+				tags, refTypeStrs, refIds, refRoles);
 		if(halt)
 			return true;	
-	}
-	return false;
-}
-
-bool DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandler> output)
-{
-	OSMPBF::PrimitiveBlock pb;
-	std::istringstream iss(decBlob);
-	bool ok = pb.ParseFromIstream(&iss);
-	if(!ok)
-		throw runtime_error("Error decoding PBF PrimitiveBlock");
-
-	std::vector<std::string> stringTab;
-	if(pb.has_stringtable())
-	{
-		const OSMPBF::StringTable &st = pb.stringtable();
-		for(int i=0; i<st.s_size(); i++)
-			stringTab.push_back(st.s(i));
-	}
-
-	int64_t lat_offset = 0, lon_offset = 0;
-	int32_t granularity = 100, date_granularity=1000;
-	if(pb.has_granularity())
-		granularity = pb.granularity();
-	if(pb.has_lat_offset())
-		lat_offset = pb.lat_offset();
-	if(pb.has_lon_offset())
-		lon_offset = pb.lon_offset();
-	if(pb.has_date_granularity())
-		lon_offset = pb.date_granularity();
-
-	int pbs = pb.primitivegroup_size();
-	for(int i=0; i<pbs; i++)
-	{
-		bool halt = false;
-		const OSMPBF::PrimitiveGroup& pg = pb.primitivegroup(i);
-
-		if(pg.nodes_size() > 0)
-			halt = DecodeOsmNodes(pg, lat_offset, lon_offset,
-				granularity, date_granularity,
-				stringTab, output);	
-
-		if(pg.has_dense())
-		{
-			const OSMPBF::DenseNodes &dense = pg.dense();
-			halt = DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
-				granularity, date_granularity,
-				stringTab, output);
-		}
-
-		if(pg.ways_size() > 0)
-			halt = DecodeOsmWays(pg, date_granularity,
-				stringTab, output);
-
-		if(pg.relations_size() > 0)
-			halt = DecodeOsmRelations(pg, date_granularity,
-				stringTab, output);		
-
-		//Changeset decoding not supported
-
-		if(halt)
-			return true;
 	}
 	return false;
 }
@@ -418,7 +366,7 @@ bool PbfDecode::DecodeNext()
 		halt = DecodeOsmHeader(decBlob, this->output);
 
 	else if(headerType == "OSMData")
-		halt = DecodeOsmData(decBlob, this->output);
+		halt = DecodeOsmData(decBlob);
 
 	if(halt) return false;
 	return true;
@@ -426,8 +374,95 @@ bool PbfDecode::DecodeNext()
 
 void PbfDecode::DecodeFinish()
 {
-	if(this->output != nullptr)
+	if(this->output)
 		this->output->Finish();
+}
+
+bool PbfDecode::DecodeOsmData(std::string &decBlob)
+{
+	OSMPBF::PrimitiveBlock pb;
+	std::istringstream iss(decBlob);
+	bool ok = pb.ParseFromIstream(&iss);
+	if(!ok)
+		throw runtime_error("Error decoding PBF PrimitiveBlock");
+
+	std::vector<std::string> stringTab;
+	if(pb.has_stringtable())
+	{
+		const OSMPBF::StringTable &st = pb.stringtable();
+		for(int i=0; i<st.s_size(); i++)
+			stringTab.push_back(st.s(i));
+	}
+
+	int64_t lat_offset = 0, lon_offset = 0;
+	int32_t granularity = 100, date_granularity=1000;
+	if(pb.has_granularity())
+		granularity = pb.granularity();
+	if(pb.has_lat_offset())
+		lat_offset = pb.lat_offset();
+	if(pb.has_lon_offset())
+		lon_offset = pb.lon_offset();
+	if(pb.has_date_granularity())
+		lon_offset = pb.date_granularity();
+
+	int pbs = pb.primitivegroup_size();
+	for(int i=0; i<pbs; i++)
+	{
+		bool halt = false;
+		const OSMPBF::PrimitiveGroup& pg = pb.primitivegroup(i);
+
+		if(pg.nodes_size() > 0)
+		{
+			halt |= CheckOutputType("n");
+			halt |= DecodeOsmNodes(pg, lat_offset, lon_offset,
+				granularity, date_granularity,
+				stringTab, this->output);	
+		}
+
+		if(pg.has_dense())
+		{
+			halt |= CheckOutputType("n");
+			const OSMPBF::DenseNodes &dense = pg.dense();
+			halt |= DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
+				granularity, date_granularity,
+				stringTab, this->output);
+		}
+
+		if(pg.ways_size() > 0)
+		{
+			halt |= CheckOutputType("w");
+			halt |= DecodeOsmWays(pg, date_granularity,
+				stringTab, this->output);
+		}
+
+		if(pg.relations_size() > 0)
+		{
+			halt |= CheckOutputType("r");
+			halt |= DecodeOsmRelations(pg, date_granularity,
+				stringTab, this->output);
+		}
+
+		//Changeset decoding not supported
+
+		if(halt)
+			return true;
+	}
+	return false;
+}
+
+bool PbfDecode::CheckOutputType(const char *objType)
+{
+	//Some encoders need to know when we switch object type
+	bool halt = false;
+	if(prevObjType != objType and prevObjType.length() > 0)		
+		if(output)
+		{
+			halt |= output->Sync();
+			halt |= output->Reset();
+		}
+
+	prevObjType = objType;
+	return halt;
 }
 
 // ******************************************

@@ -129,10 +129,16 @@ bool O5mDecode::DecodeNext()
 		this->DecodeBoundingBox();
 		return !stopProcessing;
 		break;
-	case 0xff:
+	case 0xee: //Sync code
+		if (this->output != NULL)
+			stopProcessing |= this->output->Sync();
+		break;
+	case 0xff: //Reset code
 		//Used in delta encoding information
 		this->ResetDeltaCoding();
-		return !stopProcessing; //Reset code
+		if (this->output != NULL)
+			stopProcessing |= this->output->Reset();
+		return !stopProcessing; 
 		break;
 	case 0xfe:
 		return !stopProcessing; //End of file
