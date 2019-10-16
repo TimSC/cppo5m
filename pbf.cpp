@@ -480,6 +480,79 @@ bool PbfDecode::CheckOutputType(const char *objType)
 
 // *******************************************
 
+
+void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_t startc, 
+	bool encodeMetaData, 
+	size_t &maxWaysToProcess, OSMPBF::StringTable *st, 
+	std::map<std::string, int32_t> &strIndexOut)
+{
+	std::map<std::string, std::uint32_t> strFreq;
+	size_t processed = 0;
+	for(size_t i=startc; i<startc + maxWaysToProcess; i++)
+	{
+		const class OsmObject &n = *(ways[i]);
+		const TagMap &tags = n.tags;
+		for(auto it = tags.begin(); it != tags.end(); it++)
+		{
+			auto it2 = strFreq.find(it->first);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[it->first] = 1;
+
+			it2 = strFreq.find(it->second);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[it->second] = 1;
+		}
+
+		if(encodeMetaData)
+		{
+			auto it2 = strFreq.find(n.metaData.username);
+			if(it2 != strFreq.end())
+				it2->second ++;
+			else
+				strFreq[n.metaData.username] = 1;	
+		}
+
+		processed = i;
+		if(strFreq.size() >= INT32_MAX - 5)
+			break; //Stop because we have a full string table
+	}
+	maxWaysToProcess = processed+1-startc;
+
+	std::map<std::uint32_t, std::vector<std::string> > strByFreq;
+	for(auto it=strFreq.begin(); it != strFreq.end(); it++)
+	{
+		strByFreq[it->second].push_back(it->first);
+	}
+	vector<std::uint32_t> freqBins;
+	for(auto it = strByFreq.begin(); it != strByFreq.end(); it++)
+	{
+		freqBins.push_back(it->first);
+	}
+	std::sort(freqBins.begin(), freqBins.end(), greater<int>()); 
+
+	//Add strings to block
+	st->add_s(""); //First string is always empty in pbf
+	for(size_t i=0; i<freqBins.size(); i++)
+	{
+		std::vector<std::string> &bin = strByFreq[freqBins[i]];
+		std::sort(bin.begin(), bin.end());
+		for(size_t j=0; j<bin.size(); j++)
+			st->add_s(bin[j]);
+	}
+
+	//Index strings for fast lookup
+	for(int i=1; i<st->s_size(); i++)
+	{
+		strIndexOut[st->s(i)] = i;
+	}
+}
+
+// *******************************************
+
 PbfEncodeBase::PbfEncodeBase()
 {
 	encodeMetaData = true;
@@ -491,6 +564,8 @@ PbfEncodeBase::PbfEncodeBase()
 	maxPayloadSize = 32 * 1024 * 1024;
 	maxHeaderSize = 64 * 1024;
 	optimalDenseNodes = 1200000;
+	optimalWays = 1000000;
+	optimalRelations = 100000;
 }
 
 PbfEncodeBase::~PbfEncodeBase()
@@ -642,6 +717,18 @@ void PbfEncodeBase::EncodeBuffer()
 		}
 	}
 
+	if(this->buffer.ways.size() > 0)
+	{
+		std::string waysPacked;
+		size_t wayc = 0;
+		while(wayc < this->buffer.ways.size())
+		{
+			uint32_t countGroupsOut=0;
+			this->EncodePbfWays(this->buffer.ways, wayc, 0, waysPacked, countGroupsOut);
+			this->WriteBlobPayload(waysPacked, "OSMData");
+		}
+	}
+
 	this->buffer.Clear();
 }
 
@@ -676,78 +763,22 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	std::string &out, uint32_t &countGroupsOut)
 {
 	//Create string table
-	std::map<std::string, std::uint32_t> strFreq;
 	size_t maxNodesToProcess = nodes.size()-nodec;
 	if(maxNodesToProcess > this->optimalDenseNodes)
 		maxNodesToProcess = this->optimalDenseNodes;
 	const size_t startNodec = nodec;
 
-	size_t processed = 0;
-	for(size_t i=startNodec; i<startNodec + maxNodesToProcess; i++)
-	{
-		const class OsmNode &n = nodes[i];
-		const TagMap &tags = n.tags;
-		for(auto it = tags.begin(); it != tags.end(); it++)
-		{
-			auto it2 = strFreq.find(it->first);
-			if(it2 != strFreq.end())
-				it2->second ++;
-			else
-				strFreq[it->first] = 1;
-
-			it2 = strFreq.find(it->second);
-			if(it2 != strFreq.end())
-				it2->second ++;
-			else
-				strFreq[it->second] = 1;
-		}
-
-		if(this->encodeMetaData)
-		{
-			auto it2 = strFreq.find(n.metaData.username);
-			if(it2 != strFreq.end())
-				it2->second ++;
-			else
-				strFreq[n.metaData.username] = 1;	
-		}
-
-		processed = i;
-		if(strFreq.size() >= INT32_MAX - 5)
-			break; //Stop because we have a full string table
-	}
-	maxNodesToProcess = processed+1-startNodec;
-
-	std::map<std::uint32_t, std::vector<std::string> > strByFreq;
-	for(auto it=strFreq.begin(); it != strFreq.end(); it++)
-	{
-		strByFreq[it->second].push_back(it->first);
-	}
-	vector<std::uint32_t> freqBins;
-	for(auto it = strByFreq.begin(); it != strByFreq.end(); it++)
-	{
-		freqBins.push_back(it->first);
-	}
-	std::sort(freqBins.begin(), freqBins.end(), greater<int>()); 
-
-	//Add strings to block
 	OSMPBF::PrimitiveBlock pb;
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
-	
-	st->add_s(""); //First string is always empty in pbf
-	for(size_t i=0; i<freqBins.size(); i++)
-	{
-		std::vector<std::string> &bin = strByFreq[freqBins[i]];
-		std::sort(bin.begin(), bin.end());
-		for(size_t j=0; j<bin.size(); j++)
-			st->add_s(bin[j]);
-	}
 
-	//Index strings for fast lookup
+	std::vector<const class OsmObject *> nodePtrs;
+	for(size_t i=0; i<nodes.size(); i++)
+		nodePtrs.push_back(&nodes[i]);
 	std::map<std::string, int32_t> strIndex;
-	for(int i=1; i<st->s_size(); i++)
-	{
-		strIndex[st->s(i)] = i;
-	}
+
+	GenerateStringTable(nodePtrs, nodec, this->encodeMetaData,
+		maxNodesToProcess, st, 
+		strIndex);
 
 	//Write nodes in groups
 	bool groupCountOk = true;
@@ -817,7 +848,6 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 			groupCountOk = false;
 	}
 
-	//First attempt at encoding
 	pb.SerializeToString(&out);
 }
 
@@ -830,7 +860,7 @@ void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNo
 	uint32_t groupLimit = countGroups;
 	while(out.size() > maxPayloadSize)
 	{
-		//Payload is too big, so we need to reencode by limiting number of groups
+		//Payload is too big, so we need to re-encode by limiting number of groups
 		groupLimit /= 2;
 		nodec = startNodec;
 		this->EncodePbfDenseNodes(nodes, nodec, groupLimit, out, countGroups);
@@ -838,6 +868,88 @@ void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNo
 		if(out.size() > maxPayloadSize and groupLimit <= 1)
 			throw runtime_error("Failed to encode nodes without breaking maxPayloadSize limit");
 	}
+}
+
+void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t &wayc, uint32_t limitGroups, 
+	std::string &out, uint32_t &countGroupsOut)
+{
+	//Create string table
+	size_t maxWaysToProcess = ways.size()-wayc;
+	if(maxWaysToProcess > this->optimalWays)
+		maxWaysToProcess = this->optimalWays;
+	const size_t startWayc = wayc;
+
+	OSMPBF::PrimitiveBlock pb;
+	OSMPBF::StringTable *st = pb.mutable_stringtable();
+
+	std::vector<const class OsmObject *> wayPtrs;
+	for(size_t i=0; i<ways.size(); i++)
+		wayPtrs.push_back(&ways[i]);
+	std::map<std::string, int32_t> strIndex;
+
+	GenerateStringTable(wayPtrs, wayc, this->encodeMetaData,
+		maxWaysToProcess, st, 
+		strIndex);
+	
+	//Write ways in groups
+	bool groupCountOk = true;
+	size_t stopIndex = startWayc+maxWaysToProcess;
+	countGroupsOut = 0;
+	while(wayc < stopIndex and groupCountOk)
+	{
+		size_t waysInGroup = stopIndex - wayc;
+		if(waysInGroup > maxGroupObjects)
+			 waysInGroup = maxGroupObjects;
+
+		int32_t date_granularity=1000;
+
+		//Check if all tags are empty
+		//TODO
+
+		OSMPBF::PrimitiveGroup *pg = pb.add_primitivegroup();
+
+		for(size_t i=wayc; i<wayc+waysInGroup; i++)
+		{
+			OSMPBF::Way *ow = pg->add_ways();
+
+			const class OsmWay &w = ways[i];
+			const TagMap &tags = w.tags;
+			ow->set_id(w.objId);
+			for(auto it = tags.begin(); it != tags.end(); it++)
+			{
+				ow->add_keys(strIndex[it->first]);
+				ow->add_vals(strIndex[it->second]);
+			}
+
+			int64_t refc = 0;
+			for(size_t j=0; j<w.refs.size(); j++)
+			{
+				ow->add_refs(w.refs[j]-refc);
+				refc = w.refs[j];
+			}
+
+			if(this->encodeMetaData)
+			{
+				OSMPBF::Info *info = ow->mutable_info();
+
+				info->set_version(w.metaData.version);
+				info->set_timestamp(w.metaData.timestamp * 1000 / date_granularity);
+				info->set_changeset(w.metaData.changeset);
+				info->set_uid(w.metaData.uid);
+				info->set_user_sid(strIndex[w.metaData.username]);
+
+				if(this->encodeHistorical)
+					info->set_visible(w.metaData.visible);
+			}
+		}
+
+		countGroupsOut ++;
+		wayc += waysInGroup;
+		if(limitGroups > 0 and countGroupsOut >= limitGroups)
+			groupCountOk = false;
+	}
+
+	pb.SerializeToString(&out);
 }
 
 // *************************************
