@@ -1,4 +1,4 @@
-
+#include "pbf.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -24,6 +24,19 @@ std::string DecompressData(const std::string &data)
     in.push(compressed);
     boost::iostreams::copy(in, decompressed);
     return decompressed.str();
+}
+
+void ReadExactLengthPbf(std::istream &str, char *out, size_t len)
+{
+	size_t total = 0;
+	while(total < len)
+	{
+		str.read(&out[total], len-total);
+		total += str.gcount();
+		//std::cout << "Read " << total << " of " << len << std::endl;
+		if(str.fail())
+			throw std::runtime_error("Input underflow");
+	}
 }
 
 bool DecodeOsmHeader(std::string &decBlob,
@@ -352,68 +365,68 @@ bool DecodeOsmData(std::string &decBlob, std::shared_ptr<class IDataStreamHandle
 	return false;
 }
 
-int main()
+// ********************************************
+
+PbfDecode::PbfDecode(std::streambuf &handleIn):
+	handle(&handleIn)
 {
-	GOOGLE_PROTOBUF_VERIFY_VERSION;
+	
+}
 
-	shared_ptr<class OsmData> osmData(new class OsmData());
+PbfDecode::~PbfDecode()
+{
 
-	std::filebuf infi;
-	infi.open("sample.pbf", std::ios::in);
+}
 
-	while(infi.in_avail()>0)
-	{
+bool PbfDecode::DecodeNext()
+{
+	int32_t blobHeaderLenNbo;
+	ReadExactLengthPbf(handle, (char*)&blobHeaderLenNbo, sizeof(int32_t));
+	int32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
 
-		int32_t blobHeaderLenNbo;
-		infi.sgetn ((char*)&blobHeaderLenNbo, sizeof(int32_t));
-		int32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
+	std::string refData;
+	refData.resize(blobHeaderLen);
+	ReadExactLengthPbf(handle, &refData[0], blobHeaderLen);
 
-		std::string refData;
-		refData.resize(blobHeaderLen);
-		infi.sgetn(&refData[0], blobHeaderLen);
+	OSMPBF::BlobHeader header;
+	std::istringstream iss(refData);
+	bool ok = header.ParseFromIstream(&iss);
+	if(!ok)
+		throw runtime_error("Error decoding PBF BlobHeader");
 
-		OSMPBF::BlobHeader header;
-		std::istringstream iss(refData);
-		bool ok = header.ParseFromIstream(&iss);
-		if(!ok)
-			throw runtime_error("Error decoding PBF BlobHeader");
+	std::string headerType = header.type();
 
-		std::string headerType = header.type();
+	int32_t blobSize = header.datasize();
+	std::string refData2;
+	refData2.resize(blobSize);
+	ReadExactLengthPbf(handle, &refData2[0], blobSize);
 
-		int32_t blobSize = header.datasize();
-		std::string refData2;
-		refData2.resize(blobSize);
-		infi.sgetn(&refData2[0], blobSize);
+	OSMPBF::Blob blob;
+	std::istringstream iss2(refData2);
+	ok = blob.ParseFromIstream(&iss2);
+	if(!ok)
+		throw runtime_error("Error decoding PBF Blob");
 
-		OSMPBF::Blob blob;
-		std::istringstream iss2(refData2);
-		ok = blob.ParseFromIstream(&iss2);
-		if(!ok)
-			throw runtime_error("Error decoding PBF Blob");
+	string decBlob;
+	if(blob.has_raw())
+		decBlob = blob.raw();
+	else if(blob.has_zlib_data())
+		decBlob = DecompressData(blob.zlib_data());
 
-		string decBlob;
-		if(blob.has_raw())
-			decBlob = blob.raw();
-		else if(blob.has_zlib_data())
-			decBlob = DecompressData(blob.zlib_data());
+	bool halt = false;
+	if(headerType == "OSMHeader")
+		halt = DecodeOsmHeader(decBlob, this->output);
 
-		bool halt = false;
-		if(headerType == "OSMHeader")
-			halt = DecodeOsmHeader(decBlob, osmData);
+	else if(headerType == "OSMData")
+		halt = DecodeOsmData(decBlob, this->output);
 
-		else if(headerType == "OSMData")
-			halt = DecodeOsmData(decBlob, osmData);
+	if(halt) return false;
+	return true;
+}
 
-		if(halt) break;
-	}
-
-	cout << "nodes " << osmData->nodes.size() << endl;
-	cout << "ways " << osmData->ways.size() << endl;
-	cout << "relations " << osmData->relations.size() << endl;
-
-	std::filebuf outfi;
-	outfi.open("pbftest.osm", std::ios::out);
-	SaveToOsmXml(*osmData.get(), outfi);
-	outfi.close();
-}	
+void PbfDecode::DecodeFinish()
+{
+	if(this->output != nullptr)
+		this->output->Finish();
+}
 

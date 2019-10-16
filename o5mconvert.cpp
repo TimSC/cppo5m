@@ -9,6 +9,7 @@
 #include "osmxml.h"
 #include "o5m.h"
 #include "utils.h"
+#include "pbf/osmformat.pb.h"
 
 using namespace std;
 namespace po = boost::program_options;
@@ -31,19 +32,21 @@ vector<string> split(const string &s, char delim) {
 
 int main(int argc, char* argv[])
 {
+	GOOGLE_PROTOBUF_VERIFY_VERSION;
 	std::cin.sync_with_stdio(false);
 
 	vector<string> inputFiles;
 	string outputFile;
-	bool formatInOsm = false, formatInO5m = false;
+	bool formatInOsm = false, formatInO5m = false, formatInPbf = false;
 	bool formatOutNull = false;
-	po::options_description desc("Convert between osm, o5m file formats");
+	po::options_description desc("Convert between osm, o5m, pbf file formats");
 	desc.add_options()
 		("help",                                                                 "show help message")
 		("input",  po::value< vector<string> >(&inputFiles),                     "input file (or '-' for console stream)")
 		("output,o", po::value< string >(&outputFile),                           "output file")
 		("in-osm", po::bool_switch(&formatInOsm),               "input file format is osm")
 		("in-o5m", po::bool_switch(&formatInO5m),               "input file format is o5m")
+        ("in-pbf", po::bool_switch(&formatInPbf),               "input file format is pbf")
 		("out-null", po::bool_switch(&formatOutNull),           "do not write output")
 	;
 	po::positional_options_description p;
@@ -115,8 +118,11 @@ int main(int argc, char* argv[])
 			inFormat = "o5m";
 		else if (formatInOsm or inFilenameSplit[filePart2] == "osm")
 			inFormat = "osm";
+		else if (formatInPbf or inFilenameSplit[filePart2] == "pbf")
+			inFormat = "pbf";
 		else
 			throw runtime_error("Input file extension not supported");
+		inbuff = infb;
 	}
 	else
 	{
@@ -125,6 +131,8 @@ int main(int argc, char* argv[])
 
 		if(formatInO5m)
 			inFormat = "o5m";
+		if(formatInPbf)
+			inFormat = "pbf";
 		else
 			inFormat = "osm";
 	}
@@ -136,6 +144,8 @@ int main(int argc, char* argv[])
 			LoadFromO5m(*inbuff, enc);
 		else if (inFormat == "osm")
 			LoadFromOsmXml(*inbuff, enc);
+		else if (inFormat == "pbf")
+			LoadFromPbf(*inbuff, enc);
 		else
 			throw runtime_error("Input file extension not supported");
 	}

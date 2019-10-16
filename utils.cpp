@@ -3,6 +3,7 @@
 #include <sstream>
 #include "o5m.h"
 #include "osmxml.h"
+#include "pbf.h"
 using namespace std;
 
 // ******* Utility funcs **********
@@ -39,6 +40,20 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 	}
 
 	dec.DecodeFinish();
+}
+
+void LoadFromPbf(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
+{
+	class PbfDecode pbfDecode(fi);
+	pbfDecode.output = output;
+
+	while (fi.in_avail()>0)
+	{
+		bool contin = pbfDecode.DecodeNext();
+		if(!contin) break;
+	}
+
+	pbfDecode.DecodeFinish();
 }
 
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output)

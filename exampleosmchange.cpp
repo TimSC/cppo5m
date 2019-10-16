@@ -3,10 +3,13 @@
 #include "utils.h"
 #include <fstream>
 #include <iostream>
+#include "pbf/osmformat.pb.h"
 using namespace std;
 
 int main()
 {
+	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
 	shared_ptr<class OsmData> osmData(new class OsmData());
 	std::filebuf infi;
 	infi.open("examplechange.osm", std::ios::in);
