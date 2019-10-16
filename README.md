@@ -31,7 +31,7 @@ o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m 
 
 	gunzip -c data.o5m.gz | ./o5mconvert - --in-o5m
 
-To regenerate sources in the pbf folder (required if your protobuf library version does not match):
+To regenerate sources in the pbf folder, (if required if your protobuf library version does not match) comment out "option optimize_for = LITE_RUNTIME" then:
 
 * protoc -I=proto proto/osmformat.proto --cpp_out=pbf
 

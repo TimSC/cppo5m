@@ -430,3 +430,124 @@ void PbfDecode::DecodeFinish()
 		this->output->Finish();
 }
 
+// ******************************************
+
+PbfEncodeBase::PbfEncodeBase()
+{
+
+}
+
+PbfEncodeBase::~PbfEncodeBase()
+{
+
+}
+
+bool PbfEncodeBase::Sync()
+{
+	return false;
+}
+
+bool PbfEncodeBase::Reset()
+{
+	return false;
+}
+
+bool PbfEncodeBase::Finish()
+{
+	return false;
+}
+
+bool PbfEncodeBase::StoreIsDiff(bool)
+{
+	return false;
+}
+
+bool PbfEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
+{
+	return false;
+}
+
+bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, double lat, double lon)
+{
+	return false;
+}
+
+bool PbfEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, const std::vector<int64_t> &refs)
+{
+	return false;
+}
+
+bool PbfEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+	const std::vector<std::string> &refRoles)
+{
+	return false;
+}
+
+void PbfEncodeBase::write (const char* s, std::streamsize n)
+{
+
+}
+
+void PbfEncodeBase::operator<< (const std::string &val)
+{
+
+}
+
+// *************************************
+
+PbfEncode::PbfEncode(std::streambuf &handleIn): PbfEncodeBase(), handle(&handleIn)
+{
+
+}
+
+PbfEncode::~PbfEncode()
+{
+
+}
+
+//*******************************************
+
+#ifdef PYTHON_AWARE
+
+PyPbfEncode::PyPbfEncode(PyObject* obj): PbfEncodeBase()
+{
+	m_PyObj = obj;
+	Py_INCREF(m_PyObj);
+	m_Write = PyObject_GetAttrString(m_PyObj, "write");
+	this->WriteStart();
+}
+
+PyPbfEncode::~PyPbfEncode()
+{
+	Py_XDECREF(m_Write);
+	Py_XDECREF(m_PyObj);
+}
+
+void PyPbfEncode::write (const char* s, std::streamsize n)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
+	#endif 
+	Py_XDECREF(ret);
+}
+
+void PyPbfEncode::operator<< (const std::string &val)
+{
+	if(this->m_Write == NULL)
+		return;
+	#if PY_MAJOR_VERSION < 3
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
+	#else
+	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
+	#endif 
+	Py_XDECREF(ret);
+}
+
+#endif //PYTHON_AWARE
