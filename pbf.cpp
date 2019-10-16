@@ -489,6 +489,7 @@ bool PbfEncodeBase::Reset()
 
 bool PbfEncodeBase::Finish()
 {
+	this->EncodeBuffer();
 	return false;
 }
 
@@ -505,12 +506,28 @@ bool PbfEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, double lat, double lon)
 {
+	buffer.StoreNode(objId, metaData, tags, lat, lon);
+
+	if(prevObjType != "n" and prevObjType.size() > 0)
+	{
+		this->EncodeBuffer();
+	}
+
+	prevObjType = "n";
 	return false;
 }
 
 bool PbfEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, const std::vector<int64_t> &refs)
 {
+	buffer.StoreWay(objId, metaData, tags, refs);
+
+	if(prevObjType != "w" and prevObjType.size() > 0)
+	{
+		this->EncodeBuffer();
+	}
+
+	prevObjType = "w";
 	return false;
 }
 
@@ -518,6 +535,14 @@ bool PbfEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData,
 	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
 	const std::vector<std::string> &refRoles)
 {
+	buffer.StoreRelation(objId, metaData, tags, refTypeStrs, refIds, refRoles);
+
+	if(prevObjType != "r" and prevObjType.size() > 0)
+	{
+		this->EncodeBuffer();
+	}
+
+	prevObjType = "r";
 	return false;
 }
 
@@ -529,6 +554,14 @@ void PbfEncodeBase::write (const char* s, std::streamsize n)
 void PbfEncodeBase::operator<< (const std::string &val)
 {
 
+}
+
+void PbfEncodeBase::EncodeBuffer()
+{
+	//TODO
+	cout << "EncodeBuffer()" << endl;
+
+	this->buffer.Clear();
 }
 
 // *************************************

@@ -8,6 +8,7 @@
 #include "OsmData.h"
 #include "osmxml.h"
 #include "o5m.h"
+#include "pbf.h"
 #include "utils.h"
 #include "pbf/osmformat.pb.h"
 
@@ -93,6 +94,8 @@ int main(int argc, char* argv[])
 		enc.reset(new class IDataStreamHandler());
 	else if(filePart > -1 and outFilenameSplit[filePart] == "o5m")
 		enc.reset(new class O5mEncode(*outbuff));
+	else if(filePart > -1 and outFilenameSplit[filePart] == "pbf")
+		enc.reset(new class PbfEncode(*outbuff));
 	else if ((filePart > -1 and outFilenameSplit[filePart] == "osm") or consoleMode)
 		enc.reset(new class OsmXmlEncode(*outbuff, customAttribs));
 	else
