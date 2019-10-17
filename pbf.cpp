@@ -513,11 +513,25 @@ void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_
 			if(it2 != strFreq.end())
 				it2->second ++;
 			else
-				strFreq[n.metaData.username] = 1;	
+				strFreq[n.metaData.username] = 1;
+		}
+
+		const class OsmRelation *rel = dynamic_cast<const class OsmRelation *>(&n);
+		if(rel != nullptr)
+		{
+			const std::vector<std::string> &refRoles = rel->refRoles;
+			for(size_t j=0; j<refRoles.size(); j++)
+			{
+				auto it2 = strFreq.find(refRoles[j]);
+				if(it2 != strFreq.end())
+					it2->second ++;
+				else
+					strFreq[refRoles[j]] = 1;
+			}
 		}
 
 		processed = i;
-		if(strFreq.size() >= INT32_MAX - 5)
+		if(strFreq.size() >= INT32_MAX - 1000)
 			break; //Stop because we have a full string table
 	}
 	maxWaysToProcess = processed+1-startc;
@@ -723,9 +737,19 @@ void PbfEncodeBase::EncodeBuffer()
 		size_t wayc = 0;
 		while(wayc < this->buffer.ways.size())
 		{
-			uint32_t countGroupsOut=0;
-			this->EncodePbfWays(this->buffer.ways, wayc, 0, waysPacked, countGroupsOut);
+			EncodePbfWaysSizeLimited(this->buffer.ways, wayc, waysPacked);
 			this->WriteBlobPayload(waysPacked, "OSMData");
+		}
+	}
+
+	if(this->buffer.relations.size() > 0)
+	{
+		std::string relsPacked;
+		size_t relc = 0;
+		while(relc < this->buffer.relations.size())
+		{
+			EncodePbfRelationsSizeLimited(this->buffer.relations, relc, relsPacked);
+			this->WriteBlobPayload(relsPacked, "OSMData");
 		}
 	}
 
@@ -950,6 +974,136 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 	}
 
 	pb.SerializeToString(&out);
+}
+
+void PbfEncodeBase::EncodePbfWaysSizeLimited(const std::vector<class OsmWay> &ways, size_t &wayc, std::string &out)
+{
+	const size_t startWayc = wayc;
+	uint32_t countGroups = 0;
+	this->EncodePbfWays(ways, wayc, 0, out, countGroups);
+
+	uint32_t groupLimit = countGroups;
+	while(out.size() > maxPayloadSize)
+	{
+		//Payload is too big, so we need to re-encode by limiting number of groups
+		groupLimit /= 2;
+		wayc = startWayc;
+		this->EncodePbfWays(ways, wayc, groupLimit, out, countGroups);
+
+		if(out.size() > maxPayloadSize and groupLimit <= 1)
+			throw runtime_error("Failed to encode ways without breaking maxPayloadSize limit");
+	}
+}
+
+void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &relations, size_t &relationc, uint32_t limitGroups, 
+	std::string &out, uint32_t &countGroupsOut)
+{
+	//Create string table
+	size_t maxRelationsToProcess = relations.size()-relationc;
+	if(maxRelationsToProcess > this->optimalRelations)
+		maxRelationsToProcess = this->optimalRelations;
+	const size_t startRelationc = relationc;
+
+	OSMPBF::PrimitiveBlock pb;
+	OSMPBF::StringTable *st = pb.mutable_stringtable();
+
+	std::vector<const class OsmObject *> relPtrs;
+	for(size_t i=0; i<relations.size(); i++)
+		relPtrs.push_back(&relations[i]);
+	std::map<std::string, int32_t> strIndex;
+
+	GenerateStringTable(relPtrs, relationc, this->encodeMetaData,
+		maxRelationsToProcess, st, 
+		strIndex);
+	
+	//Write relations in groups
+	bool groupCountOk = true;
+	size_t stopIndex = startRelationc+maxRelationsToProcess;
+	countGroupsOut = 0;
+	while(relationc < stopIndex and groupCountOk)
+	{
+		size_t relsInGroup = stopIndex - relationc;
+		if(relsInGroup > maxGroupObjects)
+			 relsInGroup = maxGroupObjects;
+
+		int32_t date_granularity=1000;
+
+		//Check if all tags are empty
+		//TODO
+
+		OSMPBF::PrimitiveGroup *pg = pb.add_primitivegroup();
+
+		for(size_t i=relationc; i<relationc+relsInGroup; i++)
+		{
+			OSMPBF::Relation *orl = pg->add_relations();
+
+			const class OsmRelation &r = relations[i];
+			const TagMap &tags = r.tags;
+			orl->set_id(r.objId);
+			for(auto it = tags.begin(); it != tags.end(); it++)
+			{
+				orl->add_keys(strIndex[it->first]);
+				orl->add_vals(strIndex[it->second]);
+			}
+
+			int64_t refc = 0;
+			for(size_t j=0; j<r.refTypeStrs.size() and j<r.refIds.size() and j<r.refRoles.size(); j++)
+			{
+				OSMPBF::Relation_MemberType mt=OSMPBF::Relation_MemberType_NODE;
+				if(r.refTypeStrs[j]=="way")
+					mt=OSMPBF::Relation_MemberType_WAY;
+				else if (r.refTypeStrs[j]=="relation")
+					mt=OSMPBF::Relation_MemberType_RELATION;
+				else if (r.refTypeStrs[j]!="node")
+					continue;
+
+				orl->add_roles_sid(strIndex[r.refRoles[j]]);
+				orl->add_memids(r.refIds[j]-refc);
+				refc = r.refIds[j];
+				orl->add_types(mt);
+			}
+
+			if(this->encodeMetaData)
+			{
+				OSMPBF::Info *info = orl->mutable_info();
+
+				info->set_version(r.metaData.version);
+				info->set_timestamp(r.metaData.timestamp * 1000 / date_granularity);
+				info->set_changeset(r.metaData.changeset);
+				info->set_uid(r.metaData.uid);
+				info->set_user_sid(strIndex[r.metaData.username]);
+
+				if(this->encodeHistorical)
+					info->set_visible(r.metaData.visible);
+			}
+		}
+
+		countGroupsOut ++;
+		relationc += relsInGroup;
+		if(limitGroups > 0 and countGroupsOut >= limitGroups)
+			groupCountOk = false;
+	}
+
+	pb.SerializeToString(&out);
+}
+
+void PbfEncodeBase::EncodePbfRelationsSizeLimited(const std::vector<class OsmRelation> &relations, size_t &relc, std::string &out)
+{
+	const size_t startRelc = relc;
+	uint32_t countGroups = 0;
+	this->EncodePbfRelations(relations, relc, 0, out, countGroups);
+
+	uint32_t groupLimit = countGroups;
+	while(out.size() > maxPayloadSize)
+	{
+		//Payload is too big, so we need to re-encode by limiting number of groups
+		groupLimit /= 2;
+		relc = startRelc;
+		this->EncodePbfRelations(relations, relc, groupLimit, out, countGroups);
+
+		if(out.size() > maxPayloadSize and groupLimit <= 1)
+			throw runtime_error("Failed to encode relations without breaking maxPayloadSize limit");
+	}
 }
 
 // *************************************
