@@ -578,7 +578,7 @@ PbfEncodeBase::PbfEncodeBase()
 	maxPayloadSize = 32 * 1024 * 1024;
 	maxHeaderSize = 64 * 1024;
 	optimalDenseNodes = 1200000;
-	optimalWays = 1000000;
+	optimalWays = 200000;
 	optimalRelations = 100000;
 	lat_offset = 0;
 	lon_offset = 0;
