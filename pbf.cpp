@@ -580,6 +580,10 @@ PbfEncodeBase::PbfEncodeBase()
 	optimalDenseNodes = 1200000;
 	optimalWays = 1000000;
 	optimalRelations = 100000;
+	lat_offset = 0;
+	lon_offset = 0;
+	granularity = 100;
+	date_granularity=1000;
 }
 
 PbfEncodeBase::~PbfEncodeBase()
@@ -698,8 +702,6 @@ void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char 
 
 void PbfEncodeBase::EncodeBuffer()
 {
-	cout << "EncodeBuffer()" << endl;
-
 	if(!headerWritten)
 	{
 		std::string hbEncoded;
@@ -793,6 +795,11 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	const size_t startNodec = nodec;
 
 	OSMPBF::PrimitiveBlock pb;
+	pb.set_granularity(this->granularity);
+	pb.set_lat_offset(this->lat_offset);
+	pb.set_lon_offset(this->lon_offset);
+	pb.set_date_granularity(this->date_granularity);
+
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
 	std::vector<const class OsmObject *> nodePtrs;
@@ -813,9 +820,6 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 		size_t nodesInGroup = stopIndex - nodec;
 		if(nodesInGroup > maxGroupObjects)
 			 nodesInGroup = maxGroupObjects;
-
-		int64_t lat_offset = 0, lon_offset = 0;
-		int32_t granularity = 100, date_granularity=1000;
 
 		//Check if all tags are empty
 		//TODO
@@ -904,6 +908,8 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 	const size_t startWayc = wayc;
 
 	OSMPBF::PrimitiveBlock pb;
+	pb.set_date_granularity(this->date_granularity);
+
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
 	std::vector<const class OsmObject *> wayPtrs;
@@ -924,8 +930,6 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 		size_t waysInGroup = stopIndex - wayc;
 		if(waysInGroup > maxGroupObjects)
 			 waysInGroup = maxGroupObjects;
-
-		int32_t date_granularity=1000;
 
 		//Check if all tags are empty
 		//TODO
@@ -1005,6 +1009,8 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 	const size_t startRelationc = relationc;
 
 	OSMPBF::PrimitiveBlock pb;
+	pb.set_date_granularity(this->date_granularity);
+
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
 	std::vector<const class OsmObject *> relPtrs;
@@ -1025,8 +1031,6 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 		size_t relsInGroup = stopIndex - relationc;
 		if(relsInGroup > maxGroupObjects)
 			 relsInGroup = maxGroupObjects;
-
-		int32_t date_granularity=1000;
 
 		//Check if all tags are empty
 		//TODO
