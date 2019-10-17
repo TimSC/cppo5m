@@ -1,5 +1,5 @@
 # cppo5m
-Encoding and decoding o5m/xml OSM map format in C++. pbf is support read only.
+Encoding and decoding o5m/xml/pbf OSM map format in C++.
 
 	sudo apt install libboost-program-options-dev libprotobuf-dev zlib1g-dev libboost-iostreams-dev
 
@@ -26,6 +26,8 @@ Example:
 		osmData.SaveToO5m(outfi);
 		outfi.close();
 	}
+
+To get started using as a library, start by looking at example.cpp, examplexml.cpp and exampleosmchange.cpp.
 
 o5mconvert is a conversion tool modelled after osmconvert. It only supports o5m and osm so far. It is mainly useful for testing. Compressed input is not supported but streaming from the console is:
 
