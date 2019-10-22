@@ -77,7 +77,7 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 		throw std::runtime_error("Error reading buffer to get o5m header");
 	std::string tmp3(&tmp, 1);
 	if(tmp3 != "\xe0")
-		throw std::runtime_error("Missing header");
+		throw std::runtime_error("Missing o5m header");
 
 	this->ResetDeltaCoding();
 }
@@ -502,7 +502,7 @@ O5mEncodeBase::O5mEncodeBase():	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	runningRefOffset(0)
 {
-
+	writtenHeader = false;
 }
 
 O5mEncodeBase::~O5mEncodeBase()
@@ -510,10 +510,22 @@ O5mEncodeBase::~O5mEncodeBase()
 
 }
 
-void O5mEncodeBase::WriteStart()
+void O5mEncodeBase::WriteStart(bool isDiff)
 {
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	this->write("\xff", 1);
+
+	this->write("\xe0", 1);
+	std::string headerData;
+	if(isDiff)
+		headerData = "o5c2";
+	else
+		headerData = "o5m2";
+	std::string len = EncodeVarint(headerData.size());
+	*this << len;
+	*this << headerData;
+
+	writtenHeader = true;
 	this->ResetDeltaCoding();
 }
 
@@ -534,20 +546,16 @@ void O5mEncodeBase::ResetDeltaCoding()
 
 bool O5mEncodeBase::StoreIsDiff(bool isDiff)
 {
-	this->write("\xe0", 1);
-	std::string headerData;
-	if(isDiff)
-		headerData = "o5c2";
-	else
-		headerData = "o5m2";
-	std::string len = EncodeVarint(headerData.size());
-	*this << len;
-	*this << headerData;
+	if(!writtenHeader)
+		this->WriteStart(isDiff);
 	return false;
 }
 
 bool O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
+
 	//south-western corner 
 	std::string bboxData;
 	bboxData.append(EncodeZigzag(round(x1 * 1e7))); //lon
@@ -654,6 +662,9 @@ void O5mEncodeBase::AddToRefTable(const std::string &encodedStrings)
 bool O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double latIn, double lonIn)
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
+
 	this->write("\x10",1);
 
 	//Object ID
@@ -687,6 +698,9 @@ bool O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData,
 bool O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, const std::vector<int64_t> &refs)
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
+
 	this->write("\x11", 1);
 
 	//Object ID
@@ -728,6 +742,8 @@ bool O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData,
 {
 	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
 		throw std::invalid_argument("Length of ref vectors must be equal");
+	if(!writtenHeader)
+		this->WriteStart(false);
 
 	this->write("\x12", 1);
 
@@ -805,12 +821,16 @@ bool O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData,
 
 bool O5mEncodeBase::Sync()
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
 	this->write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
 	return false;
 }
 
 bool O5mEncodeBase::Reset()
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
 	this->write("\xff", 1);
 	this->ResetDeltaCoding();
 	return false;
@@ -818,6 +838,8 @@ bool O5mEncodeBase::Reset()
 
 bool O5mEncodeBase::Finish()
 {
+	if(!writtenHeader)
+		this->WriteStart(false);
 	this->write("\xfe", 1);
 	return false;
 }
@@ -836,7 +858,7 @@ void O5mEncodeBase::operator<< (const std::string &val)
 
 O5mEncode::O5mEncode(std::streambuf &handleIn): O5mEncodeBase(), handle(&handleIn)
 {
-	this->WriteStart();
+
 }
 
 O5mEncode::~O5mEncode()

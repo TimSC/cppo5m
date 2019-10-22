@@ -87,8 +87,9 @@ protected:
 	unsigned refTableLengthThreshold;
 	unsigned refTableMaxSize;
 	int64_t runningRefOffset;
+	bool writtenHeader;
 
-	void WriteStart();
+	void WriteStart(bool isDiff);
 	void EncodeMetaData(const class MetaData &metaData, std::ostream &outStream);
 	void WriteStringPair(const std::string &firstString, const std::string &secondString, 
 			std::ostream &tmpStream);
