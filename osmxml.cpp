@@ -22,6 +22,7 @@ std::string escapexml(const std::string& src) {
 			case '"': dst << "&quot;"; break;
 			case '<': dst << "&lt;"; break;
 			case '>': dst << "&gt;"; break;
+			case '\n': dst << "&#10;"; break;
 			default: dst << ch; break;
 		}
 	}

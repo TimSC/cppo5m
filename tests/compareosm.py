@@ -72,7 +72,7 @@ def CompareNode(n1, n2, depth=0):
 			print ("Members don't match")		
 
 if __name__=="__main__":
-	t1 = parse("../malta-latest.osm")
+	t1 = parse("../sample3.osm")
 	t2 = parse("../sample2.osm")
 
 	CompareNode(t1.getroot(), t2.getroot())
