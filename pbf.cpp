@@ -675,7 +675,7 @@ void PbfEncodeBase::operator<< (const std::string &val)
 
 void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char *type)
 {
-	cout << type << "," << blobPayload.size() << endl;
+	//cout << type << "," << blobPayload.size() << endl;
 	if(blobPayload.size() > this->maxPayloadSize)
 		throw runtime_error("Blob payload size exceeds what PBF allows");
 
@@ -785,11 +785,14 @@ void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
 		throw runtime_error("HeaderBlock size exceeds what PBF allows");
 }
 
-void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, size_t &nodec, uint32_t limitGroups, 
-	std::string &out, uint32_t &countGroupsOut)
+void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, size_t &nodec, 
+	size_t maxNodesToProcess, 
+	std::string &out)
 {
 	//Create string table
-	size_t maxNodesToProcess = nodes.size()-nodec;
+	size_t nodesRemaining = nodes.size()-nodec;
+	if(maxNodesToProcess > nodesRemaining)
+		maxNodesToProcess = nodesRemaining;
 	if(maxNodesToProcess > this->optimalDenseNodes)
 		maxNodesToProcess = this->optimalDenseNodes;
 	const size_t startNodec = nodec;
@@ -812,10 +815,8 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 		strIndex);
 
 	//Write nodes in groups
-	bool groupCountOk = true;
 	size_t stopIndex = startNodec+maxNodesToProcess;
-	countGroupsOut = 0;
-	while(nodec < stopIndex and groupCountOk)
+	while(nodec < stopIndex)
 	{
 		size_t nodesInGroup = stopIndex - nodec;
 		if(nodesInGroup > maxGroupObjects)
@@ -870,10 +871,7 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 			}
 		}
 
-		countGroupsOut ++;
 		nodec += nodesInGroup;
-		if(limitGroups > 0 and countGroupsOut >= limitGroups)
-			groupCountOk = false;
 	}
 
 	pb.SerializeToString(&out);
@@ -882,27 +880,28 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNode> &nodes, size_t &nodec, std::string &out)
 {
 	const size_t startNodec = nodec;
-	uint32_t countGroups = 0;
-	this->EncodePbfDenseNodes(nodes, nodec, 0, out, countGroups);
+	uint32_t objLimit = this->optimalDenseNodes;
+	this->EncodePbfDenseNodes(nodes, nodec, objLimit, out);
 
-	uint32_t groupLimit = countGroups;
 	while(out.size() > maxPayloadSize)
 	{
 		//Payload is too big, so we need to re-encode by limiting number of groups
-		groupLimit /= 2;
+		objLimit /= 2;
 		nodec = startNodec;
-		this->EncodePbfDenseNodes(nodes, nodec, groupLimit, out, countGroups);
+		this->EncodePbfDenseNodes(nodes, nodec, objLimit, out);
 
-		if(out.size() > maxPayloadSize and groupLimit <= 1)
+		if(out.size() > maxPayloadSize and objLimit <= 1)
 			throw runtime_error("Failed to encode nodes without breaking maxPayloadSize limit");
 	}
 }
 
-void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t &wayc, uint32_t limitGroups, 
-	std::string &out, uint32_t &countGroupsOut)
+void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t &wayc, size_t maxWaysToProcess, 
+	std::string &out)
 {
 	//Create string table
-	size_t maxWaysToProcess = ways.size()-wayc;
+	size_t waysRemaining = ways.size()-wayc;
+	if(maxWaysToProcess > waysRemaining)
+		maxWaysToProcess = waysRemaining;
 	if(maxWaysToProcess > this->optimalWays)
 		maxWaysToProcess = this->optimalWays;
 	const size_t startWayc = wayc;
@@ -922,10 +921,8 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 		strIndex);
 	
 	//Write ways in groups
-	bool groupCountOk = true;
 	size_t stopIndex = startWayc+maxWaysToProcess;
-	countGroupsOut = 0;
-	while(wayc < stopIndex and groupCountOk)
+	while(wayc < stopIndex)
 	{
 		size_t waysInGroup = stopIndex - wayc;
 		if(waysInGroup > maxGroupObjects)
@@ -971,10 +968,7 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 			}
 		}
 
-		countGroupsOut ++;
 		wayc += waysInGroup;
-		if(limitGroups > 0 and countGroupsOut >= limitGroups)
-			groupCountOk = false;
 	}
 
 	pb.SerializeToString(&out);
@@ -983,27 +977,28 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 void PbfEncodeBase::EncodePbfWaysSizeLimited(const std::vector<class OsmWay> &ways, size_t &wayc, std::string &out)
 {
 	const size_t startWayc = wayc;
-	uint32_t countGroups = 0;
-	this->EncodePbfWays(ways, wayc, 0, out, countGroups);
+	uint32_t objLimit = this->optimalWays;
+	this->EncodePbfWays(ways, wayc, objLimit, out);
 
-	uint32_t groupLimit = countGroups;
 	while(out.size() > maxPayloadSize)
 	{
 		//Payload is too big, so we need to re-encode by limiting number of groups
-		groupLimit /= 2;
+		objLimit /= 2;
 		wayc = startWayc;
-		this->EncodePbfWays(ways, wayc, groupLimit, out, countGroups);
+		this->EncodePbfWays(ways, wayc, objLimit, out);
 
-		if(out.size() > maxPayloadSize and groupLimit <= 1)
+		if(out.size() > maxPayloadSize and objLimit <= 1)
 			throw runtime_error("Failed to encode ways without breaking maxPayloadSize limit");
 	}
 }
 
-void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &relations, size_t &relationc, uint32_t limitGroups, 
-	std::string &out, uint32_t &countGroupsOut)
+void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &relations, size_t &relationc, size_t maxRelationsToProcess, 
+	std::string &out)
 {
 	//Create string table
-	size_t maxRelationsToProcess = relations.size()-relationc;
+	size_t relationsRemain = relations.size()-relationc;
+	if(maxRelationsToProcess > relationsRemain)
+		maxRelationsToProcess = relationsRemain;
 	if(maxRelationsToProcess > this->optimalRelations)
 		maxRelationsToProcess = this->optimalRelations;
 	const size_t startRelationc = relationc;
@@ -1025,7 +1020,6 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 	//Write relations in groups
 	bool groupCountOk = true;
 	size_t stopIndex = startRelationc+maxRelationsToProcess;
-	countGroupsOut = 0;
 	while(relationc < stopIndex and groupCountOk)
 	{
 		size_t relsInGroup = stopIndex - relationc;
@@ -1082,10 +1076,7 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 			}
 		}
 
-		countGroupsOut ++;
 		relationc += relsInGroup;
-		if(limitGroups > 0 and countGroupsOut >= limitGroups)
-			groupCountOk = false;
 	}
 
 	pb.SerializeToString(&out);
@@ -1094,18 +1085,17 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 void PbfEncodeBase::EncodePbfRelationsSizeLimited(const std::vector<class OsmRelation> &relations, size_t &relc, std::string &out)
 {
 	const size_t startRelc = relc;
-	uint32_t countGroups = 0;
-	this->EncodePbfRelations(relations, relc, 0, out, countGroups);
+	uint32_t objLimit = this->optimalRelations;
+	this->EncodePbfRelations(relations, relc, objLimit, out);
 
-	uint32_t groupLimit = countGroups;
 	while(out.size() > maxPayloadSize)
 	{
 		//Payload is too big, so we need to re-encode by limiting number of groups
-		groupLimit /= 2;
+		objLimit /= 2;
 		relc = startRelc;
-		this->EncodePbfRelations(relations, relc, groupLimit, out, countGroups);
+		this->EncodePbfRelations(relations, relc, objLimit, out);
 
-		if(out.size() > maxPayloadSize and groupLimit <= 1)
+		if(out.size() > maxPayloadSize and objLimit <= 1)
 			throw runtime_error("Failed to encode relations without breaking maxPayloadSize limit");
 	}
 }
