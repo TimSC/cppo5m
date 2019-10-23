@@ -872,7 +872,6 @@ PyO5mEncode::PyO5mEncode(PyObject* obj): O5mEncodeBase()
 	m_PyObj = obj;
 	Py_INCREF(m_PyObj);
 	m_Write = PyObject_GetAttrString(m_PyObj, "write");
-	this->WriteStart();
 }
 
 PyO5mEncode::~PyO5mEncode()

@@ -1121,7 +1121,6 @@ PyPbfEncode::PyPbfEncode(PyObject* obj): PbfEncodeBase()
 	m_PyObj = obj;
 	Py_INCREF(m_PyObj);
 	m_Write = PyObject_GetAttrString(m_PyObj, "write");
-	this->WriteStart();
 }
 
 PyPbfEncode::~PyPbfEncode()
