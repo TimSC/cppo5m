@@ -61,6 +61,20 @@ public:
 	virtual void StoreOsmData(const class OsmObject *obj, bool ifunused) {};
 };
 
+class OsmDecoder
+{
+public:
+	OsmDecoder();
+	virtual ~OsmDecoder();
+
+	virtual bool DecodeNext()=0;
+	virtual void DecodeHeader() {};
+	virtual void DecodeFinish() {};
+
+	class IDataStreamHandler *output;
+	std::string errString;
+};
+
 class OsmObject
 {
 public:

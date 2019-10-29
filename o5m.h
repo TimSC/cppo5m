@@ -18,7 +18,7 @@ void TestDecodeNumber();
 void TestEncodeNumber();
 
 ///Decodes a binary o5m stream and fires a series of events to the output object derived from IDataStreamHandler
-class O5mDecode
+class O5mDecode : public OsmDecoder
 {
 protected:
 	std::istream handle;
@@ -64,8 +64,6 @@ public:
 	bool DecodeNext();
 	void DecodeHeader();
 	void DecodeFinish();
-
-	class IDataStreamHandler *output;
 };
 
 ///Encodes a stream of map objects into an o5m output binary stream

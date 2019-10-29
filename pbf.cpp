@@ -329,9 +329,10 @@ bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 // ********************************************
 
 PbfDecode::PbfDecode(std::streambuf &handleIn):
-	handle(&handleIn)
+	handle(&handleIn),
+	OsmDecoder()
 {
-	output = nullptr;
+
 }
 
 PbfDecode::~PbfDecode()

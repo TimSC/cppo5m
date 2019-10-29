@@ -8,7 +8,7 @@
 #endif
 
 ///Decodes a binary PBF stream and fires a series of events to the output object derived from IDataStreamHandler
-class PbfDecode
+class PbfDecode : public OsmDecoder
 {
 protected:
 	std::istream handle;
@@ -23,8 +23,6 @@ public:
 
 	bool DecodeNext();
 	void DecodeFinish();
-
-	class IDataStreamHandler* output;
 };
 
 

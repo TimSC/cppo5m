@@ -45,6 +45,18 @@ void PrintTagMap(const TagMap &tagMap)
 
 // **************************************************
 
+OsmDecoder::OsmDecoder()
+{
+	output = nullptr;
+}
+
+OsmDecoder::~OsmDecoder()
+{
+
+}
+
+// **************************************************
+
 OsmObject::OsmObject()
 {
 	objId = 0;

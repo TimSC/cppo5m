@@ -10,7 +10,7 @@
 #endif
 
 ///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
-class OsmXmlDecodeString
+class OsmXmlDecodeString : public OsmDecoder
 {
 	friend class OsmChangeXmlDecodeString;
 protected:
@@ -25,8 +25,6 @@ protected:
 	void DecodeMetaData(class MetaData &metaData);
 
 public:
-	class IDataStreamHandler *output;
-	std::string errString;
 	bool parseCompletedOk;
 
 	OsmXmlDecodeString();

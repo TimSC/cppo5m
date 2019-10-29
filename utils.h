@@ -14,16 +14,41 @@ void LoadFromO5m(std::streambuf &fi, class IDataStreamHandler *output);
 void LoadFromOsmXml(std::streambuf &fi, class IDataStreamHandler *output);
 void LoadFromPbf(std::streambuf &fi, class IDataStreamHandler *output);
 void LoadFromOsmChangeXml(std::streambuf &fi, class IOsmChangeBlock *output);
+void LoadFromDecoder(std::streambuf &fi, class OsmDecoder *osmDecoder, class IDataStreamHandler *output);
 
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi);
+
+std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, std::string &filename);
 
 // Convenience functions: load from std::string
 
 void LoadFromO5m(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output);
 void LoadFromOsmXml(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output);
 void LoadFromOsmChangeXml(const std::string &fi, std::shared_ptr<class IOsmChangeBlock> output);
+
+// Filters
+
+class FindBbox
+{
+public:
+	FindBbox();
+	virtual ~FindBbox();
+
+	virtual bool StoreIsDiff(bool);
+	virtual bool StoreBounds(double x1, double y1, double x2, double y2);
+	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon);
+	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs);
+	virtual bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles);
+
+	bool bboxFound;
+	double x1, y1, x2, y2;
+};
 
 #endif //_UTILS_H
 

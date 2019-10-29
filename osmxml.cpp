@@ -61,7 +61,7 @@ static void EndChangeElement(void *userData, const XML_Char *name)
 
 // ************* Decoder *************
 
-OsmXmlDecodeString::OsmXmlDecodeString()
+OsmXmlDecodeString::OsmXmlDecodeString() : OsmDecoder()
 {
 	xmlDepth = 0;
 	parseCompleted = false;

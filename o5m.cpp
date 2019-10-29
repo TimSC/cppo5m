@@ -56,7 +56,7 @@ O5mDecode::O5mDecode(std::streambuf &handleIn) :
 	handle(&handleIn),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
-	output(nullptr)
+	OsmDecoder()
 {
 	finished = false;
 	stopProcessing = false;
