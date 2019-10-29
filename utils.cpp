@@ -8,43 +8,6 @@ using namespace std;
 
 // ******* Utility funcs **********
 
-void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
-{
-	class O5mDecode dec(fi);
-	LoadFromDecoder(fi, &dec, output.get());
-}
-
-void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
-{
-	class OsmXmlDecode dec(fi);
-	LoadFromDecoder(fi, &dec, output.get());
-}
-
-void LoadFromPbf(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
-{
-	class PbfDecode pbfDecode(fi);
-	LoadFromDecoder(fi, &pbfDecode, output.get());
-}
-
-void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output)
-{
-	class OsmChangeXmlDecode dec(fi);
-	dec.output = output.get();
-	dec.DecodeHeader();
-
-	while (fi.in_avail()>0)
-	{
-		bool ok = dec.DecodeNext();
-		if(!ok)
-		{
-			cout << dec.errString << endl;
-			break;
-		}
-	}
-
-	dec.DecodeFinish();
-}
-
 void LoadFromO5m(std::streambuf &fi, class IDataStreamHandler* output)
 {
 	class O5mDecode dec(fi);
@@ -122,19 +85,19 @@ void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, 
 	enc.Encode(osmChange);
 }
 
-void LoadFromO5m(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output)
+void LoadFromO5m(const std::string &fi, class IDataStreamHandler *output)
 {
 	std::istringstream buff(fi);
 	LoadFromO5m(*buff.rdbuf(), output);
 }
 
-void LoadFromOsmXml(const std::string &fi, std::shared_ptr<class IDataStreamHandler> output)
+void LoadFromOsmXml(const std::string &fi, class IDataStreamHandler *output)
 {
 	std::istringstream buff(fi);
 	LoadFromOsmXml(*buff.rdbuf(), output);
 }
 
-void LoadFromOsmChangeXml(const std::string &fi, std::shared_ptr<class IOsmChangeBlock> output)
+void LoadFromOsmChangeXml(const std::string &fi, class IOsmChangeBlock *output)
 {
 	std::istringstream buff(fi);
 	LoadFromOsmChangeXml(*buff.rdbuf(), output);

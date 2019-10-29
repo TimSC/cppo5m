@@ -105,6 +105,7 @@ int main(int argc, char* argv[])
 	bool consoleInput = false;
 	std::streambuf *inbuff = nullptr;
 	string inFormat = "";
+	std::shared_ptr<class OsmDecoder> inDecoder;
 	if(inputFiles[0] != "-")
 	{
 		std::filebuf *infb = new std::filebuf;
@@ -115,17 +116,26 @@ int main(int argc, char* argv[])
 			exit(0);
 		}
 
+		inbuff = infb;
 		vector<string> inFilenameSplit = split(inputFiles[0], '.');
 		int64_t filePart2 = (int64_t)(inFilenameSplit.size()-1);
 		if(formatInO5m or inFilenameSplit[filePart2] == "o5m")
+		{
 			inFormat = "o5m";
+			inDecoder = make_shared<O5mDecode>(*inbuff);
+		}
 		else if (formatInOsm or inFilenameSplit[filePart2] == "osm")
+		{
 			inFormat = "osm";
+			inDecoder = make_shared<OsmXmlDecode>(*inbuff);
+		}
 		else if (formatInPbf or inFilenameSplit[filePart2] == "pbf")
+		{
 			inFormat = "pbf";
+			inDecoder = make_shared<PbfDecode>(*inbuff);
+		}
 		else
 			throw runtime_error("Input file extension not supported");
-		inbuff = infb;
 	}
 	else
 	{
@@ -133,29 +143,28 @@ int main(int argc, char* argv[])
 		inbuff = std::cin.rdbuf();
 
 		if(formatInO5m)
+		{
 			inFormat = "o5m";
+			inDecoder = make_shared<O5mDecode>(*inbuff);
+		}
 		if(formatInPbf)
+		{
 			inFormat = "pbf";
+			inDecoder = make_shared<PbfDecode>(*inbuff);
+		}
 		else
+		{
 			inFormat = "osm";
+			inDecoder = make_shared<OsmXmlDecode>(*inbuff);
+		}
 	}
 
+
+	if(!inDecoder)
+		throw runtime_error("Input file extension not specified/supported");
+
 	//Run decoder
-	if(inFormat != "")
-	{
-		if(inFormat == "o5m")
-			LoadFromO5m(*inbuff, enc);
-		else if (inFormat == "osm")
-			LoadFromOsmXml(*inbuff, enc);
-		else if (inFormat == "pbf")
-			LoadFromPbf(*inbuff, enc);
-		else
-			throw runtime_error("Input file extension not supported");
-	}
-	else
-	{
-		throw runtime_error("Input file extension not specified");
-	}
+	LoadFromDecoder(*inbuff, inDecoder.get(), enc.get());
 
 	//Tidy up. It is a good idea to delete the pipeline in order.
 	if(!consoleInput)
@@ -163,6 +172,7 @@ int main(int argc, char* argv[])
 		delete inbuff;
 		inbuff = nullptr;
 	}
+	inDecoder.reset();
 	enc.reset();
 	if(!consoleMode)
 	{
