@@ -11,7 +11,7 @@ using namespace std;
 void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class O5mDecode dec(fi);
-	dec.output = output;
+	dec.output = output.get();
 	dec.DecodeHeader();
 
 	while (fi.in_avail()>0)
@@ -26,7 +26,7 @@ void LoadFromO5m(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> o
 void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class OsmXmlDecode dec(fi);
-	dec.output = output;
+	dec.output = output.get();
 	dec.DecodeHeader();
 
 	while (fi.in_avail()>0)
@@ -45,7 +45,7 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 void LoadFromPbf(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output)
 {
 	class PbfDecode pbfDecode(fi);
-	pbfDecode.output = output;
+	pbfDecode.output = output.get();
 
 	while (fi.in_avail()>0)
 	{
@@ -57,6 +57,73 @@ void LoadFromPbf(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> o
 }
 
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output)
+{
+	class OsmChangeXmlDecode dec(fi);
+	dec.output = output.get();
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok)
+		{
+			cout << dec.errString << endl;
+			break;
+		}
+	}
+
+	dec.DecodeFinish();
+}
+
+void LoadFromO5m(std::streambuf &fi, class IDataStreamHandler* output)
+{
+	class O5mDecode dec(fi);
+	dec.output = output;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok) break;
+	}
+
+	dec.DecodeFinish();
+}
+
+void LoadFromOsmXml(std::streambuf &fi, class IDataStreamHandler* output)
+{
+	class OsmXmlDecode dec(fi);
+	dec.output = output;
+	dec.DecodeHeader();
+
+	while (fi.in_avail()>0)
+	{
+		bool ok = dec.DecodeNext();
+		if(!ok)
+		{
+			cout << dec.errString << endl;
+			break;
+		}
+	}
+
+	dec.DecodeFinish();
+}
+
+void LoadFromPbf(std::streambuf &fi, class IDataStreamHandler* output)
+{
+	class PbfDecode pbfDecode(fi);
+	pbfDecode.output = output;
+
+	while (fi.in_avail()>0)
+	{
+		bool contin = pbfDecode.DecodeNext();
+		if(!contin) break;
+	}
+
+	pbfDecode.DecodeFinish();
+}
+
+void LoadFromOsmChangeXml(std::streambuf &fi, class IOsmChangeBlock* output)
 {
 	class OsmChangeXmlDecode dec(fi);
 	dec.output = output;
@@ -74,6 +141,8 @@ void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBl
 
 	dec.DecodeFinish();
 }
+
+// **********************************************************
 
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi)
 {

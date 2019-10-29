@@ -47,7 +47,8 @@ int main()
 	infi.open("o5mtest.o5m", std::ios::in);
 
 	class O5mDecode dec(infi);
-	dec.output.reset(new class ResultHandler);
+	class ResultHandler resultHandler;
+	dec.output = &resultHandler;
 
 	dec.DecodeHeader();
 	while (infi.in_avail()>0)

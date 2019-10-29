@@ -10,6 +10,11 @@ void LoadFromOsmXml(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler
 void LoadFromPbf(std::streambuf &fi, std::shared_ptr<class IDataStreamHandler> output);
 void LoadFromOsmChangeXml(std::streambuf &fi, std::shared_ptr<class IOsmChangeBlock> output);
 
+void LoadFromO5m(std::streambuf &fi, class IDataStreamHandler *output);
+void LoadFromOsmXml(std::streambuf &fi, class IDataStreamHandler *output);
+void LoadFromPbf(std::streambuf &fi, class IDataStreamHandler *output);
+void LoadFromOsmChangeXml(std::streambuf &fi, class IOsmChangeBlock *output);
+
 void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi);

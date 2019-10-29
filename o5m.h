@@ -65,7 +65,7 @@ public:
 	void DecodeHeader();
 	void DecodeFinish();
 
-	std::shared_ptr<class IDataStreamHandler> output;
+	class IDataStreamHandler *output;
 };
 
 ///Encodes a stream of map objects into an o5m output binary stream

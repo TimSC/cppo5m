@@ -267,7 +267,7 @@ OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
 	OsmXmlDecodeString(),
 	handle(&handleIn)
 {
-
+	output = nullptr;
 }
 
 OsmXmlDecode::~OsmXmlDecode()
@@ -549,6 +549,7 @@ void PyOsmXmlEncode::SetOutput(PyObject* obj)
 OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 	decodeBuff(new class OsmData())
 {
+	output = nullptr;
 	xmlDepth = 0;
 	parseCompleted = false;
 	parseCompletedOk = false;
@@ -557,7 +558,7 @@ OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 	XML_SetUserData(parser, this);
 	XML_SetElementHandler(parser, ::StartChangeElement, ::EndChangeElement);
 	decodeBuff->StoreIsDiff(true);
-	osmDataDecoder.output = decodeBuff;
+	osmDataDecoder.output = decodeBuff.get();
 }
 
 OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()

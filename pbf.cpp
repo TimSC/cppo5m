@@ -53,7 +53,7 @@ void ReadExactLengthPbf(std::istream &str, char *out, size_t len)
 }
 
 bool DecodeOsmHeader(std::string &decBlob,
-	std::shared_ptr<class IDataStreamHandler> output)
+	class IDataStreamHandler* output)
 {
 	OSMPBF::HeaderBlock hb;
 	std::istringstream iss(decBlob);
@@ -97,7 +97,7 @@ bool DecodeOsmNodes(const OSMPBF::PrimitiveGroup& pg,
 	int32_t granularity, 
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	std::shared_ptr<class IDataStreamHandler> output)
+	class IDataStreamHandler* output)
 {
 	for(int i=0; i<pg.nodes_size(); i++)
 	{
@@ -135,7 +135,7 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	int64_t lat_offset, int64_t lon_offset,
 	int32_t granularity, int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	std::shared_ptr<class IDataStreamHandler> output)
+	class IDataStreamHandler* output)
 {
 	//Decode tags
 	vector<map<string, string> > tags;
@@ -221,7 +221,7 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 bool DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	std::shared_ptr<class IDataStreamHandler> output)
+	class IDataStreamHandler* output)
 {
 	for(int i=0; i<pg.ways_size(); i++)
 	{
@@ -264,7 +264,7 @@ bool DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	std::shared_ptr<class IDataStreamHandler> output)
+	class IDataStreamHandler* output)
 {
 	for(int i=0; i<pg.relations_size(); i++)
 	{
@@ -331,7 +331,7 @@ bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 PbfDecode::PbfDecode(std::streambuf &handleIn):
 	handle(&handleIn)
 {
-
+	output = nullptr;
 }
 
 PbfDecode::~PbfDecode()

@@ -24,7 +24,7 @@ public:
 	bool DecodeNext();
 	void DecodeFinish();
 
-	std::shared_ptr<class IDataStreamHandler> output;
+	class IDataStreamHandler* output;
 };
 
 

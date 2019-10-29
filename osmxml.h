@@ -25,7 +25,7 @@ protected:
 	void DecodeMetaData(class MetaData &metaData);
 
 public:
-	std::shared_ptr<class IDataStreamHandler> output;
+	class IDataStreamHandler *output;
 	std::string errString;
 	bool parseCompletedOk;
 
@@ -138,7 +138,7 @@ protected:
 public:
 	std::string errString;
 	bool parseCompletedOk;
-	std::shared_ptr<class IOsmChangeBlock> output;
+	class IOsmChangeBlock *output;
 
 	OsmChangeXmlDecodeString();
 	virtual ~OsmChangeXmlDecodeString();
