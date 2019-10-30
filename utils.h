@@ -16,7 +16,7 @@ void SaveToO5m(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmXml(const class OsmData &osmData, std::streambuf &fi);
 void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, std::streambuf &fi);
 
-std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, std::string &filename);
+std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, const std::string &filename);
 
 // Convenience functions: load from std::string
 
@@ -27,7 +27,7 @@ void LoadFromOsmChangeXml(const std::string &fi, class IOsmChangeBlock *output);
 
 // Filters
 
-class FindBbox
+class FindBbox : public IDataStreamHandler
 {
 public:
 	FindBbox();

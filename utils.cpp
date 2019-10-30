@@ -105,7 +105,7 @@ void LoadFromOsmChangeXml(const std::string &fi, class IOsmChangeBlock *output)
 
 // ************************************************
 
-std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, std::string &filename)
+std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, const std::string &filename)
 {
 	if(filename.size() < 4)
 		invalid_argument("Extension not recognised"); 
@@ -135,7 +135,7 @@ std::shared_ptr<class OsmDecoder> DecoderOsmFactory(std::streambuf &handleIn, st
 
 // ************************************************
 
-FindBbox::FindBbox()
+FindBbox::FindBbox() : IDataStreamHandler()
 {
 	bboxFound = false;
 	x1 = 0.0;
