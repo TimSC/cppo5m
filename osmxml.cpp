@@ -136,11 +136,12 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 			if(it != this->metadataMap.end())
 				maxlon = atof(it->second.c_str());
 
-			stopProcessing |= output->StoreBounds(minlon, minlat, maxlon, maxlat);
+			if(output != nullptr)
+				stopProcessing |= output->StoreBounds(minlon, minlat, maxlon, maxlat);
 		}
 		else
 		{
-			if(this->lastObjectType != this->currentObjectType)
+			if(this->lastObjectType != this->currentObjectType && output != nullptr)
 			{
 				stopProcessing |= output->Sync();
 				stopProcessing |= output->Reset();
@@ -164,16 +165,19 @@ void OsmXmlDecodeString::EndElement(const XML_Char *name)
 				if(it != this->metadataMap.end())
 					lon = atof(it->second.c_str());
 
-				stopProcessing |= output->StoreNode(objId, metaData, this->tags, lat, lon);
+				if(output != nullptr)
+					stopProcessing |= output->StoreNode(objId, metaData, this->tags, lat, lon);
 			}
 			else if(this->currentObjectType == "way")
 			{
-				stopProcessing |= output->StoreWay(objId, metaData, this->tags, this->memObjIds);
+				if(output != nullptr)
+					stopProcessing |= output->StoreWay(objId, metaData, this->tags, this->memObjIds);
 			}
 			else if(this->currentObjectType == "relation")
 			{
-				stopProcessing |= output->StoreRelation(objId, metaData, this->tags, 
-					this->memObjTypes, this->memObjIds, this->memObjRoles);
+				if(output != nullptr)
+					stopProcessing |= output->StoreRelation(objId, metaData, this->tags, 
+						this->memObjTypes, this->memObjIds, this->memObjRoles);
 			}
 
 			this->lastObjectType = this->currentObjectType;
@@ -225,7 +229,7 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 
 bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 {
-	if(output == NULL)
+	if(output == nullptr)
 		throw runtime_error("OsmXmlDecode output pointer is null");
 	if(this->parseCompleted)
 		throw runtime_error("Decode already finished");
@@ -257,7 +261,9 @@ void OsmXmlDecodeString::DecodeFinish()
 {
 	if(parseCompleted)
 		throw runtime_error("Decode already finished");
-	output->Finish();
+	if(output != nullptr)
+		output->Finish();
+	this->output = nullptr;
 	parseCompleted = true;
 }
 
@@ -636,7 +642,10 @@ void OsmChangeXmlDecodeString::DecodeFinish()
 	if(this->parseCompleted)
 		throw runtime_error("Decode already finished");
 
-	decodeBuff->Finish();
+	this->osmDataDecoder.DecodeFinish();
+	this->decodeBuff->Finish();
+	this->output = nullptr;
+
 	this->parseCompleted = true;
 }
 
