@@ -47,5 +47,27 @@ public:
 	double x1, y1, x2, y2;
 };
 
+class DeduplicateOsm : public IDataStreamHandler
+{
+public:
+	DeduplicateOsm(class IDataStreamHandler &out);
+	virtual ~DeduplicateOsm();
+
+	virtual bool StoreIsDiff(bool);
+	virtual bool StoreBounds(double x1, double y1, double x2, double y2);
+	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, double lat, double lon);
+	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 
+		const TagMap &tags, const std::vector<int64_t> &refs);
+	virtual bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+		const std::vector<std::string> &refRoles);
+
+	virtual void ResetExisting();
+
+	std::set<int64_t> nodeIds, wayIds, relationIds;
+	class IDataStreamHandler &out;
+};
+
 #endif //_UTILS_H
 

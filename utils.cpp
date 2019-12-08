@@ -183,3 +183,66 @@ bool FindBbox::StoreRelation(int64_t objId, const class MetaData &metaData, cons
 	return true; //Stop processing
 }
 
+// ******************************************************
+
+DeduplicateOsm::DeduplicateOsm(class IDataStreamHandler &out) : IDataStreamHandler(),
+	out(out)
+{
+
+}
+
+DeduplicateOsm::~DeduplicateOsm()
+{
+
+}
+
+bool DeduplicateOsm::StoreIsDiff(bool isDiff)
+{
+	return out.StoreIsDiff(isDiff);
+}
+
+bool DeduplicateOsm::StoreBounds(double x1, double y1, double x2, double y2)
+{
+	return out.StoreBounds(x1, y1, x2, y2);
+}
+
+bool DeduplicateOsm::StoreNode(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, double lat, double lon)
+{
+	auto it = nodeIds.find(objId);
+	if(it != nodeIds.end())
+		return false;
+	nodeIds.insert(objId);
+
+	return out.StoreNode(objId, metaData, tags, lat, lon);
+}
+
+bool DeduplicateOsm::StoreWay(int64_t objId, const class MetaData &metaData, 
+	const TagMap &tags, const std::vector<int64_t> &refs)
+{
+	auto it = wayIds.find(objId);
+	if(it != wayIds.end())
+		return false;
+	wayIds.insert(objId);
+
+	return out.StoreWay(objId, metaData, tags, refs);
+}
+
+bool DeduplicateOsm::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
+	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
+	const std::vector<std::string> &refRoles)
+{
+	auto it = relationIds.find(objId);
+	if(it != relationIds.end())
+		return false;
+	relationIds.insert(objId);
+
+	return out.StoreRelation(objId, metaData, tags, refTypeStrs, refIds, refRoles);
+}
+
+void DeduplicateOsm::ResetExisting()
+{
+	nodeIds.clear();
+	wayIds.clear();
+	relationIds.clear();
+}
