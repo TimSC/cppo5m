@@ -69,5 +69,18 @@ public:
 	class IDataStreamHandler &out;
 };
 
+class OsmFilterRenumber : public OsmData
+{
+public:
+	OsmFilterRenumber(std::shared_ptr<class IDataStreamHandler> out);
+	virtual ~OsmFilterRenumber();
+
+	virtual bool Finish();
+
+private:
+    std::shared_ptr<class IDataStreamHandler> out;
+};
+
+
 #endif //_UTILS_H
 

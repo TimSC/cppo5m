@@ -180,6 +180,8 @@ public:
 
 	virtual void write (const char* s, std::streamsize n);
 	virtual void operator<< (const std::string &val);
+
+	virtual bool Finish() {return false;};
 };
 
 #endif //_OSMXML_H

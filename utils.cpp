@@ -1,6 +1,7 @@
 #include "utils.h"
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 #include "o5m.h"
 #include "osmxml.h"
 #include "pbf.h"
@@ -61,6 +62,7 @@ void LoadFromDecoder(std::streambuf &fi, class OsmDecoder *osmDecoder, class IDa
 	}
 
 	osmDecoder->DecodeFinish();
+	output->Finish();
 }
 
 // **********************************************************
@@ -83,6 +85,7 @@ void SaveToOsmChangeXml(const class OsmChange &osmChange, bool separateActions, 
 	TagMap empty;
 	class OsmChangeXmlEncode enc(fi, empty, separateActions);
 	enc.Encode(osmChange);
+	enc.Finish();
 }
 
 void LoadFromO5m(const std::string &fi, class IDataStreamHandler *output)
@@ -246,3 +249,54 @@ void DeduplicateOsm::ResetExisting()
 	wayIds.clear();
 	relationIds.clear();
 }
+
+// *******************************************************************
+
+bool CompareObjsById (class OsmObject *i, class OsmObject *j) { return (i->objId<j->objId); }
+
+OsmFilterRenumber::OsmFilterRenumber(shared_ptr<class IDataStreamHandler> out): out(out)
+{
+
+}
+
+OsmFilterRenumber::~OsmFilterRenumber()
+{
+
+}
+
+bool OsmFilterRenumber::Finish()
+{
+	//Sort nodes
+	std::vector<class OsmObject *> ptrs;
+	for(size_t i=0; i<nodes.size(); i++)
+		ptrs.push_back(&nodes[i]);
+	std::sort(ptrs.begin(), ptrs.end(), CompareObjsById);
+	std::vector<class OsmNode> nodesCpy;
+	for(size_t i=0; i<ptrs.size(); i++)
+		nodesCpy.push_back(*static_cast<class OsmNode *>(ptrs[i]));
+	nodes = nodesCpy;
+
+	//Sort ways
+	ptrs.clear();
+	for(size_t i=0; i<ways.size(); i++)
+		ptrs.push_back(&ways[i]);
+	std::sort(ptrs.begin(), ptrs.end(), CompareObjsById);
+	std::vector<class OsmWay> waysCpy;
+	for(size_t i=0; i<ptrs.size(); i++)
+		waysCpy.push_back(*static_cast<class OsmWay *>(ptrs[i]));
+	ways = waysCpy;
+
+	//Sort relation
+	ptrs.clear();
+	for(size_t i=0; i<relations.size(); i++)
+		ptrs.push_back(&relations[i]);
+	std::sort(ptrs.begin(), ptrs.end(), CompareObjsById);
+	std::vector<class OsmRelation> relationsCpy;
+	for(size_t i=0; i<ptrs.size(); i++)
+		relationsCpy.push_back(*static_cast<class OsmRelation *>(ptrs[i]));
+	relations = relationsCpy;	
+
+	this->StreamTo(*out);
+	return false;
+}
+

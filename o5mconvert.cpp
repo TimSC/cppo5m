@@ -17,18 +17,18 @@ namespace po = boost::program_options;
 
 //http://stackoverflow.com/a/236803/4288232
 void split2(const string &s, char delim, vector<string> &elems) {
-    stringstream ss;
-    ss.str(s);
-    string item;
-    while (getline(ss, item, delim)) {
-        elems.push_back(item);
-    }
+	stringstream ss;
+	ss.str(s);
+	string item;
+	while (getline(ss, item, delim)) {
+		elems.push_back(item);
+	}
 }
 
 vector<string> split(const string &s, char delim) {
-    vector<string> elems;
-    split2(s, delim, elems);
-    return elems;
+	vector<string> elems;
+	split2(s, delim, elems);
+	return elems;
 }
 
 int main(int argc, char* argv[])
@@ -39,16 +39,17 @@ int main(int argc, char* argv[])
 	vector<string> inputFiles;
 	string outputFile;
 	bool formatInOsm = false, formatInO5m = false, formatInPbf = false;
-	bool formatOutNull = false;
+	bool formatOutNull = false, resort = false;
 	po::options_description desc("Convert between osm, o5m, pbf file formats");
 	desc.add_options()
-		("help",                                                                 "show help message")
-		("input",  po::value< vector<string> >(&inputFiles),                     "input file (or '-' for console stream)")
-		("output,o", po::value< string >(&outputFile),                           "output file")
-		("in-osm", po::bool_switch(&formatInOsm),               "input file format is osm")
-		("in-o5m", po::bool_switch(&formatInO5m),               "input file format is o5m")
-        ("in-pbf", po::bool_switch(&formatInPbf),               "input file format is pbf")
-		("out-null", po::bool_switch(&formatOutNull),           "do not write output")
+		("help",																 "show help message")
+		("input",  po::value< vector<string> >(&inputFiles),					 "input file (or '-' for console stream)")
+		("output,o", po::value< string >(&outputFile),						   "output file")
+		("in-osm", po::bool_switch(&formatInOsm),			   "input file format is osm")
+		("in-o5m", po::bool_switch(&formatInO5m),			   "input file format is o5m")
+		("in-pbf", po::bool_switch(&formatInPbf),			   "input file format is pbf")
+		("out-null", po::bool_switch(&formatOutNull),		   "do not write output")
+		("resort", po::bool_switch(&resort),		   "resort output by ID (memory intensive)")
 	;
 	po::positional_options_description p;
 	p.add("input", -1);
@@ -100,6 +101,9 @@ int main(int argc, char* argv[])
 		enc.reset(new class OsmXmlEncode(*outbuff, customAttribs));
 	else
 		throw runtime_error("Output file extension not supported");
+
+	if(resort)
+		enc.reset(new OsmFilterRenumber(enc));
 
 	//Prepare input
 	bool consoleInput = false;
