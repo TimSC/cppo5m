@@ -62,7 +62,6 @@ void LoadFromDecoder(std::streambuf &fi, class OsmDecoder *osmDecoder, class IDa
 	}
 
 	osmDecoder->DecodeFinish();
-	output->Finish();
 }
 
 // **********************************************************

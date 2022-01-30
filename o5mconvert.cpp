@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
 	vector<string> inputFiles;
 	string outputFile;
 	bool formatInOsm = false, formatInO5m = false, formatInPbf = false;
-	bool formatOutNull = false, resort = false;
+	bool formatOutNull = false, sort = false;
 	po::options_description desc("Convert between osm, o5m, pbf file formats");
 	desc.add_options()
 		("help",																 "show help message")
@@ -49,7 +49,7 @@ int main(int argc, char* argv[])
 		("in-o5m", po::bool_switch(&formatInO5m),			   "input file format is o5m")
 		("in-pbf", po::bool_switch(&formatInPbf),			   "input file format is pbf")
 		("out-null", po::bool_switch(&formatOutNull),		   "do not write output")
-		("resort", po::bool_switch(&resort),		   "resort output by ID (memory intensive)")
+		("sort", po::bool_switch(&sort),		   "sort output by ID (memory intensive)")
 	;
 	po::positional_options_description p;
 	p.add("input", -1);
@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
 	else
 		throw runtime_error("Output file extension not supported");
 
-	if(resort)
+	if(sort)
 		enc.reset(new OsmFilterRenumber(enc));
 
 	//Prepare input
