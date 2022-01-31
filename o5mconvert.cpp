@@ -39,6 +39,7 @@ int main(int argc, char* argv[])
 	vector<string> inputFiles;
 	string outputFile;
 	bool formatInOsm = false, formatInO5m = false, formatInPbf = false;
+	bool formatOutOsm = false, formatOutO5m = false, formatOutPbf = false;
 	bool formatOutNull = false, sort = false;
 	po::options_description desc("Convert between osm, o5m, pbf file formats");
 	desc.add_options()
@@ -48,6 +49,9 @@ int main(int argc, char* argv[])
 		("in-osm", po::bool_switch(&formatInOsm),			   "input file format is osm")
 		("in-o5m", po::bool_switch(&formatInO5m),			   "input file format is o5m")
 		("in-pbf", po::bool_switch(&formatInPbf),			   "input file format is pbf")
+		("out-osm", po::bool_switch(&formatOutOsm),			   "output file format is osm")
+		("out-o5m", po::bool_switch(&formatOutO5m),			   "output file format is o5m")
+		("out-pbf", po::bool_switch(&formatOutPbf),			   "output file format is pbf")
 		("out-null", po::bool_switch(&formatOutNull),		   "do not write output")
 		("sort", po::bool_switch(&sort),		   "sort output by ID (memory intensive)")
 	;
@@ -93,11 +97,11 @@ int main(int argc, char* argv[])
 
 	if(formatOutNull)
 		enc.reset(new class IDataStreamHandler());
-	else if(filePart > -1 and outFilenameSplit[filePart] == "o5m")
+	else if(formatOutO5m or (filePart > -1 and outFilenameSplit[filePart] == "o5m"))
 		enc.reset(new class O5mEncode(*outbuff));
-	else if(filePart > -1 and outFilenameSplit[filePart] == "pbf")
+	else if(formatOutPbf or (filePart > -1 and outFilenameSplit[filePart] == "pbf"))
 		enc.reset(new class PbfEncode(*outbuff));
-	else if ((filePart > -1 and outFilenameSplit[filePart] == "osm") or consoleMode)
+	else if (formatOutOsm or (filePart > -1 and outFilenameSplit[filePart] == "osm") or consoleMode)
 		enc.reset(new class OsmXmlEncode(*outbuff, customAttribs));
 	else
 		throw runtime_error("Output file extension not supported");
