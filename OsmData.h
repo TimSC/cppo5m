@@ -43,6 +43,9 @@ public:
 
 	virtual bool StoreIsDiff(bool) {return false;};
 	virtual bool StoreBounds(double x1, double y1, double x2, double y2) {return false;};
+
+	virtual bool StoreBbox(const std::vector<double> &bbox) {return false;};
+
 	virtual bool StoreNode(int64_t objId, const class MetaData &metaData, 
 		const TagMap &tags, double lat, double lon) {return false;};
 	virtual bool StoreWay(int64_t objId, const class MetaData &metaData, 

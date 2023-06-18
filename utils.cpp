@@ -166,6 +166,11 @@ bool FindBbox::StoreBounds(double x1, double y1, double x2, double y2)
 	return false;
 }
 
+bool FindBbox::StoreBbox(const std::vector<double> &bbox) 
+{
+	return true;
+}
+
 bool FindBbox::StoreNode(int64_t objId, const class MetaData &metaData, 
 	const TagMap &tags, double lat, double lon)
 {
@@ -206,6 +211,11 @@ bool DeduplicateOsm::StoreIsDiff(bool isDiff)
 bool DeduplicateOsm::StoreBounds(double x1, double y1, double x2, double y2)
 {
 	return out.StoreBounds(x1, y1, x2, y2);
+}
+
+bool DeduplicateOsm::StoreBbox(const std::vector<double> &bbox)
+{
+	return out.StoreBbox(bbox);
 }
 
 bool DeduplicateOsm::StoreNode(int64_t objId, const class MetaData &metaData, 
