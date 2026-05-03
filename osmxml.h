@@ -185,7 +185,7 @@ public:
 class OsmChangeXmlDecode : public OsmChangeXmlDecodeString
 {
 private:
-	char decodeBuff[10*1024];
+	char readBuff[10*1024];
 	std::istream handle;
 
 public:

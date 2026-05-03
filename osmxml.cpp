@@ -346,8 +346,7 @@ void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
 		int timezoneOffsetMin=0;
 		ParseIso8601Datetime(it->second.c_str(), &dt, &timezoneOffsetMin);
 		TmToUtc(&dt, timezoneOffsetMin);
-		time_t ts = mktime (&dt);
-		metaData.timestamp = (int64_t)ts;
+		metaData.timestamp = (int64_t)timegm(&dt);
 	}
 	it = this->metadataMap.find("changeset");
 	if(it != this->metadataMap.end())
@@ -500,7 +499,8 @@ void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::strin
 	{
 		time_t tt = metaData.timestamp;
 		char buf[50];
-		strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&tt));
+		struct tm tmbuf;
+		strftime(buf, sizeof(buf), "%FT%TZ", gmtime_r(&tt, &tmbuf));
 		ss << " timestamp=\""<<buf<<"\"";
 	}
 	if(metaData.uid != 0)
@@ -870,10 +870,10 @@ OsmChangeXmlDecode::~OsmChangeXmlDecode()
 
 bool OsmChangeXmlDecode::DecodeNext()
 {
-	handle.read((char *)decodeBuff, sizeof(decodeBuff));
+	handle.read((char *)readBuff, sizeof(readBuff));
 
 	bool done = handle.gcount()==0;
-	return DecodeSubString(decodeBuff, handle.gcount(), done);
+	return DecodeSubString(readBuff, handle.gcount(), done);
 }
 
 void OsmChangeXmlDecode::DecodeHeader()

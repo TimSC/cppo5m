@@ -23,6 +23,8 @@ uint64_t DecodeVarint(std::istream &str)
 		char valc = (char)rawBuff;
 		uint64_t val = *(unsigned char *)(&valc);
 		contin = (val & 0x80) != 0;
+		if(offset >= 64)
+			throw std::runtime_error("Varint too long");
 		total += (val & 0x7f) << offset;
 		offset += 7;
 	}
@@ -52,6 +54,8 @@ int64_t DecodeZigzag(std::istream &str)
 		char valc = (char)rawBuff;
 		uint64_t val = *(unsigned char *)(&valc);
 		contin = (val & 0x80) != 0;
+		if(offset >= 64)
+			throw std::runtime_error("Zigzag varint too long");
 		total += (val & 0x7f) << offset;
 		offset += 7;
 	}
@@ -76,7 +80,7 @@ void EncodeVarint(uint64_t val, std::string &out)
 		unsigned char sevenBits = val & 0x7f;
 		val = val >> 7;
 		more = val != 0;
-		if(cursor < out.capacity()) {
+		if(cursor < INTERNAL_BUFF_SIZE) {
 			out[cursor] = (more << 7) + sevenBits;
 			cursor ++;	
 		}
@@ -107,7 +111,7 @@ void EncodeZigzag(int64_t val, std::string &out)
 		unsigned char sevenBits = zz & 0x7f;
 		zz = zz >> 7;
 		more = zz != 0;
-		if(cursor < out.capacity()) {
+		if(cursor < INTERNAL_BUFF_SIZE) {
 			out[cursor] = (more << 7) + sevenBits;
 			cursor ++;	
 		}

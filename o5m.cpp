@@ -443,6 +443,8 @@ void O5mDecode::DecodeRelation()
 			typeAndRole = this->stringPairs[offset];
 		}
 
+		if(typeAndRole.size() < 2)
+			throw std::runtime_error("o5m relation member type/role string too short");
 		char typeCodeStr[] = "a";
 		typeCodeStr[0] = typeAndRole[0];
 		int typeCode = atoi(typeCodeStr);
