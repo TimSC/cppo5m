@@ -3,10 +3,76 @@
 #include <ctime>
 #include <assert.h>
 #include <cstring>
+#include <limits>
 extern "C" {
 #include "iso8601lib/iso8601.h"
 }
 using namespace std;
+
+static thread_local class OsmXmlLimits defaultOsmXmlLimits;
+
+static std::string LimitMessage(const std::string &name, size_t limit, size_t actual)
+{
+	stringstream ss;
+	ss << name << " limit exceeded; maximum is " << limit << ", got " << actual;
+	return ss.str();
+}
+
+OsmXmlLimits::OsmXmlLimits()
+{
+	maxBytes = 0;
+	maxDepth = 0;
+	maxObjects = 0;
+	maxTagsPerObject = 0;
+	maxWayNodesPerObject = 0;
+	maxRelationMembersPerObject = 0;
+	maxAttributesPerElement = 0;
+	maxAttributeBytes = 0;
+}
+
+void OsmXmlLimits::Apply(const std::map<std::string, int64_t> &limitsIn)
+{
+	for(std::map<std::string, int64_t>::const_iterator it=limitsIn.begin(); it!=limitsIn.end(); it++)
+	{
+		if(it->second < 0)
+			throw invalid_argument("XML parser limits must be zero or greater");
+
+		size_t value = (size_t)it->second;
+		if(it->first == "max_bytes")
+			maxBytes = value;
+		else if(it->first == "max_depth")
+			maxDepth = value;
+		else if(it->first == "max_objects")
+			maxObjects = value;
+		else if(it->first == "max_tags_per_object")
+			maxTagsPerObject = value;
+		else if(it->first == "max_members_per_object")
+		{
+			maxWayNodesPerObject = value;
+			maxRelationMembersPerObject = value;
+		}
+		else if(it->first == "max_way_nodes_per_object")
+			maxWayNodesPerObject = value;
+		else if(it->first == "max_relation_members_per_object")
+			maxRelationMembersPerObject = value;
+		else if(it->first == "max_attributes_per_element")
+			maxAttributesPerElement = value;
+		else if(it->first == "max_attribute_bytes")
+			maxAttributeBytes = value;
+		else
+			throw invalid_argument("Unknown XML parser limit: " + it->first);
+	}
+}
+
+void SetDefaultOsmXmlLimits(const class OsmXmlLimits &limits)
+{
+	defaultOsmXmlLimits = limits;
+}
+
+class OsmXmlLimits GetDefaultOsmXmlLimits()
+{
+	return defaultOsmXmlLimits;
+}
 
 // ********* Utility classes ***********
 
@@ -41,22 +107,22 @@ void XmlAttsToMap(const XML_Char **atts, std::map<std::string, std::string> &att
 
 static void StartElement(void *userData, const XML_Char *name, const XML_Char **atts)
 {
-	((class OsmXmlDecode *)userData)->StartElement(name, atts);
+	((class OsmXmlDecodeString *)userData)->StartElement(name, atts);
 }
 
 static void EndElement(void *userData, const XML_Char *name)
 {
-	((class OsmXmlDecode *)userData)->EndElement(name);
+	((class OsmXmlDecodeString *)userData)->EndElement(name);
 }
 
 static void StartChangeElement(void *userData, const XML_Char *name, const XML_Char **atts)
 {
-	((class OsmChangeXmlDecode *)userData)->StartElement(name, atts);
+	((class OsmChangeXmlDecodeString *)userData)->StartElement(name, atts);
 }
 
 static void EndChangeElement(void *userData, const XML_Char *name)
 {
-	((class OsmChangeXmlDecode *)userData)->EndElement(name);
+	((class OsmChangeXmlDecodeString *)userData)->EndElement(name);
 }
 
 // ************* Decoder *************
@@ -71,6 +137,12 @@ OsmXmlDecodeString::OsmXmlDecodeString() : OsmDecoder()
 	XML_SetElementHandler(parser, ::StartElement, ::EndElement);
 	this->firstParseCall = true;
 	stopProcessing = false;
+	limits = GetDefaultOsmXmlLimits();
+	bytesDecoded = 0;
+	objectCount = 0;
+	tagCount = 0;
+	wayNodeCount = 0;
+	relationMemberCount = 0;
 }
 
 OsmXmlDecodeString::~OsmXmlDecodeString()
@@ -80,10 +152,55 @@ OsmXmlDecodeString::~OsmXmlDecodeString()
 	XML_ParserFree(parser);
 }
 
+void OsmXmlDecodeString::SetLimits(const class OsmXmlLimits &limitsIn)
+{
+	limits = limitsIn;
+}
+
+bool OsmXmlDecodeString::FailLimit(const std::string &message)
+{
+	errString = message;
+	stopProcessing = true;
+	XML_StopParser(parser, XML_FALSE);
+	return false;
+}
+
+bool OsmXmlDecodeString::CheckLimit(size_t value, size_t limit, const std::string &message)
+{
+	if(limit > 0 && value > limit)
+		return FailLimit(message);
+	return true;
+}
+
+bool OsmXmlDecodeString::CheckElementLimits(const XML_Char *name, const XML_Char **atts)
+{
+	size_t attributeCount = 0;
+	size_t attributeBytes = strlen(name);
+	for(size_t i=0; atts[i] != NULL; i += 2)
+	{
+		attributeCount++;
+		attributeBytes += strlen(atts[i]) + strlen(atts[i+1]);
+	}
+
+	if(!CheckLimit(attributeCount, limits.maxAttributesPerElement,
+		LimitMessage("PGMAP_XML_MAX_ATTRIBUTES_PER_ELEMENT", limits.maxAttributesPerElement, attributeCount)))
+		return false;
+	if(!CheckLimit(attributeBytes, limits.maxAttributeBytes,
+		LimitMessage("PGMAP_XML_MAX_ATTRIBUTE_BYTES", limits.maxAttributeBytes, attributeBytes)))
+		return false;
+	return true;
+}
+
 void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
 {
 	this->xmlDepth ++;
 	//cout << this->xmlDepth << " startel " << name << endl;
+
+	if(!CheckLimit(this->xmlDepth, limits.maxDepth,
+		LimitMessage("PGMAP_XML_MAX_DEPTH", limits.maxDepth, this->xmlDepth)))
+		return;
+	if(!CheckElementLimits(name, atts))
+		return;
 
 	std::map<std::string, std::string> attribs;
 	XmlAttsToMap(atts, attribs);
@@ -92,20 +209,42 @@ void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **att
 	{
 		this->currentObjectType = name;
 		this->metadataMap = attribs;
+		tagCount = 0;
+		wayNodeCount = 0;
+		relationMemberCount = 0;
+		if(strcmp(name, "node") == 0 || strcmp(name, "way") == 0 || strcmp(name, "relation") == 0)
+		{
+			objectCount++;
+			if(!CheckLimit(objectCount, limits.maxObjects,
+				LimitMessage("CHANGESETS_MAXIMUM_ELEMENTS", limits.maxObjects, objectCount)))
+				return;
+		}
 	}
 
 	else if(this->xmlDepth == 3)
 	{
 		if(strcmp(name, "tag") == 0)
 		{
+			tagCount++;
+			if(!CheckLimit(tagCount, limits.maxTagsPerObject,
+				LimitMessage("PGMAP_XML_MAX_TAGS_PER_OBJECT", limits.maxTagsPerObject, tagCount)))
+				return;
 			this->tags[attribs["k"]] = attribs["v"];
 		}
 		if(strcmp(name, "nd") == 0 && currentObjectType == "way")
 		{
+			wayNodeCount++;
+			if(!CheckLimit(wayNodeCount, limits.maxWayNodesPerObject,
+				LimitMessage("WAYNODES_MAXIMUM", limits.maxWayNodesPerObject, wayNodeCount)))
+				return;
 			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
 		}
 		if(strcmp(name, "member") == 0 && currentObjectType == "relation")
 		{
+			relationMemberCount++;
+			if(!CheckLimit(relationMemberCount, limits.maxRelationMembersPerObject,
+				LimitMessage("RELATION_MEMBERS_MAXIMUM", limits.maxRelationMembersPerObject, relationMemberCount)))
+				return;
 			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
 			this->memObjTypes.push_back(attribs["type"]);
 			this->memObjRoles.push_back(attribs["role"]);
@@ -234,6 +373,13 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 	if(this->parseCompleted)
 		throw runtime_error("Decode already finished");
 
+	if(len > std::numeric_limits<size_t>::max() - bytesDecoded)
+		return FailLimit("XML_UPLOAD_MAXIMUM_BYTES limit exceeded");
+	bytesDecoded += len;
+	if(!CheckLimit(bytesDecoded, limits.maxBytes,
+		LimitMessage("XML_UPLOAD_MAXIMUM_BYTES", limits.maxBytes, bytesDecoded)))
+		return false;
+
 	if(this->firstParseCall)
 	{
 		output->StoreIsDiff(false);
@@ -242,6 +388,8 @@ bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
 
 	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
 	{
+		if(stopProcessing)
+			return false;
 		stringstream ss;
 		ss << XML_ErrorString(XML_GetErrorCode(parser))
 			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
@@ -560,11 +708,14 @@ OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
 	parseCompleted = false;
 	parseCompletedOk = false;
 	ifunused = false;
+	limits = GetDefaultOsmXmlLimits();
+	bytesDecoded = 0;
 	parser = XML_ParserCreate(NULL);
 	XML_SetUserData(parser, this);
 	XML_SetElementHandler(parser, ::StartChangeElement, ::EndChangeElement);
 	decodeBuff->StoreIsDiff(true);
 	osmDataDecoder.output = decodeBuff.get();
+	osmDataDecoder.SetLimits(limits);
 }
 
 OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()
@@ -574,10 +725,55 @@ OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()
 	XML_ParserFree(parser);
 }
 
+void OsmChangeXmlDecodeString::SetLimits(const class OsmXmlLimits &limitsIn)
+{
+	limits = limitsIn;
+	osmDataDecoder.SetLimits(limitsIn);
+}
+
+bool OsmChangeXmlDecodeString::FailLimit(const std::string &message)
+{
+	errString = message;
+	XML_StopParser(parser, XML_FALSE);
+	return false;
+}
+
+bool OsmChangeXmlDecodeString::CheckLimit(size_t value, size_t limit, const std::string &message)
+{
+	if(limit > 0 && value > limit)
+		return FailLimit(message);
+	return true;
+}
+
+bool OsmChangeXmlDecodeString::CheckElementLimits(const XML_Char *name, const XML_Char **atts)
+{
+	size_t attributeCount = 0;
+	size_t attributeBytes = strlen(name);
+	for(size_t i=0; atts[i] != NULL; i += 2)
+	{
+		attributeCount++;
+		attributeBytes += strlen(atts[i]) + strlen(atts[i+1]);
+	}
+
+	if(!CheckLimit(attributeCount, limits.maxAttributesPerElement,
+		LimitMessage("PGMAP_XML_MAX_ATTRIBUTES_PER_ELEMENT", limits.maxAttributesPerElement, attributeCount)))
+		return false;
+	if(!CheckLimit(attributeBytes, limits.maxAttributeBytes,
+		LimitMessage("PGMAP_XML_MAX_ATTRIBUTE_BYTES", limits.maxAttributeBytes, attributeBytes)))
+		return false;
+	return true;
+}
+
 void OsmChangeXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
 {
 	this->xmlDepth ++;
 	//cout << this->xmlDepth << " startel " << name << endl;
+
+	if(!CheckLimit(this->xmlDepth, limits.maxDepth,
+		LimitMessage("PGMAP_XML_MAX_DEPTH", limits.maxDepth, this->xmlDepth)))
+		return;
+	if(!CheckElementLimits(name, atts))
+		return;
 
 	if(this->xmlDepth == 2)
 	{
@@ -622,8 +818,17 @@ bool OsmChangeXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool
 	if(output == NULL)
 		throw runtime_error("OsmXmlDecode output pointer is null");
 
+	if(len > std::numeric_limits<size_t>::max() - bytesDecoded)
+		return FailLimit("XML_UPLOAD_MAXIMUM_BYTES limit exceeded");
+	bytesDecoded += len;
+	if(!CheckLimit(bytesDecoded, limits.maxBytes,
+		LimitMessage("XML_UPLOAD_MAXIMUM_BYTES", limits.maxBytes, bytesDecoded)))
+		return false;
+
 	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
 	{
+		if(errString.size() > 0)
+			return false;
 		stringstream ss;
 		ss << XML_ErrorString(XML_GetErrorCode(parser))
 			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
@@ -782,4 +987,3 @@ void OsmChangeXmlEncode::operator<< (const string &val)
 {
 	this->handle << val;
 }
-

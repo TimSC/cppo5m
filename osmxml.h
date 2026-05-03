@@ -2,12 +2,32 @@
 #define _OSMXML_H
 
 #include <memory>
+#include <map>
 #include "o5m.h"
 #include "OsmData.h"
 #include <expat.h>
 #ifdef PYTHON_AWARE
 #include <Python.h>
 #endif
+
+class OsmXmlLimits
+{
+public:
+	size_t maxBytes;
+	size_t maxDepth;
+	size_t maxObjects;
+	size_t maxTagsPerObject;
+	size_t maxWayNodesPerObject;
+	size_t maxRelationMembersPerObject;
+	size_t maxAttributesPerElement;
+	size_t maxAttributeBytes;
+
+	OsmXmlLimits();
+	void Apply(const std::map<std::string, int64_t> &limits);
+};
+
+void SetDefaultOsmXmlLimits(const class OsmXmlLimits &limits);
+class OsmXmlLimits GetDefaultOsmXmlLimits();
 
 ///Decodes a binary OSM XML stream and fires a series of events to the output object derived from IDataStreamHandler
 class OsmXmlDecodeString : public OsmDecoder
@@ -21,8 +41,13 @@ protected:
 	std::vector<int64_t> memObjIds;
 	std::vector<std::string> memObjTypes, memObjRoles;
 	bool firstParseCall, parseCompleted, stopProcessing;
+	class OsmXmlLimits limits;
+	size_t bytesDecoded, objectCount, tagCount, wayNodeCount, relationMemberCount;
 
 	void DecodeMetaData(class MetaData &metaData);
+	bool CheckLimit(size_t value, size_t limit, const std::string &message);
+	bool CheckElementLimits(const XML_Char *name, const XML_Char **atts);
+	bool FailLimit(const std::string &message);
 
 public:
 	bool parseCompletedOk;
@@ -37,6 +62,7 @@ public:
 
 	void StartElement(const XML_Char *name, const XML_Char **atts);
 	void EndElement(const XML_Char *name);
+	void SetLimits(const class OsmXmlLimits &limitsIn);
 };
 
 /// This handles data from a std::streambuf input.
@@ -132,6 +158,12 @@ protected:
 	std::string currentAction;
 	bool ifunused;	
 	bool parseCompleted;
+	class OsmXmlLimits limits;
+	size_t bytesDecoded;
+
+	bool CheckLimit(size_t value, size_t limit, const std::string &message);
+	bool CheckElementLimits(const XML_Char *name, const XML_Char **atts);
+	bool FailLimit(const std::string &message);
 
 public:
 	std::string errString;
@@ -146,6 +178,7 @@ public:
 
 	void StartElement(const XML_Char *name, const XML_Char **atts);
 	void EndElement(const XML_Char *name);
+	void SetLimits(const class OsmXmlLimits &limitsIn);
 };
 
 /// This handles data from a std::streambuf input.
@@ -185,4 +218,3 @@ public:
 };
 
 #endif //_OSMXML_H
-
