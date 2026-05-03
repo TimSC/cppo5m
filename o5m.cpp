@@ -53,10 +53,10 @@ void ReadExactLength(std::istream &str, char *out, size_t len)
 // ****** o5m decoder ******
 
 O5mDecode::O5mDecode(std::streambuf &handleIn) : 
+	OsmDecoder(),
 	handle(&handleIn),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000),
-	OsmDecoder()
+	refTableMaxSize(15000)
 {
 	finished = false;
 	stopProcessing = false;
@@ -905,4 +905,3 @@ void PyO5mEncode::operator<< (const std::string &val)
 }
 
 #endif //PYTHON_AWARE
-

@@ -143,7 +143,7 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	for(int j=0; j<dense.keys_vals_size(); j++)
 	{
 		int32_t sti = dense.keys_vals(j);
-		if(sti > 0 and sti < stringTab.size() and j<dense.keys_vals_size()-1)
+		if(sti > 0 and (size_t)sti < stringTab.size() and j<dense.keys_vals_size()-1)
 		{
 			int32_t sti2 = dense.keys_vals(j+1);
 			current[stringTab[sti]] = stringTab[sti2];
@@ -167,7 +167,7 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 		class MetaData metaData;
 		TagMap empty;
 		const TagMap *tagMapPtr = &empty;
-		if(j < tags.size())
+		if((size_t)j < tags.size())
 			tagMapPtr = &tags[j];
 		
 		if(dense.has_denseinfo())
@@ -197,7 +197,7 @@ bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 			if(j < di.user_sid_size())
 			{
 				user_sidc += di.user_sid(j);
-				if(user_sidc > 0 and user_sidc <= stringTab.size())
+				if(user_sidc > 0 and (size_t)user_sidc < stringTab.size())
 					metaData.username = stringTab[user_sidc];
 			}
 
@@ -310,7 +310,7 @@ bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 			}
 			refIds.push_back(memidsc);
 			int32_t roleIndex = relation.roles_sid(j);
-			if(roleIndex > 0 and roleIndex < stringTab.size())
+			if(roleIndex > 0 and (size_t)roleIndex < stringTab.size())
 				refRoles.push_back(stringTab[roleIndex]);
 			else
 				refRoles.push_back("");
