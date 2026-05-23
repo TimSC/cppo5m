@@ -443,7 +443,7 @@ void O5mDecode::DecodeRelation()
 			typeAndRole = this->stringPairs[offset];
 		}
 
-		if(typeAndRole.size() < 2)
+		if(typeAndRole.size() < 1)
 			throw std::runtime_error("o5m relation member type/role string too short");
 		char typeCodeStr[] = "a";
 		typeCodeStr[0] = typeAndRole[0];
@@ -468,6 +468,8 @@ void O5mDecode::DecodeRelation()
 			refId = this->lastRefRelation;
 			typeStr = "relation";
 			break;
+		default:
+			throw std::runtime_error("o5m relation member type code invalid");
 		}
 
 		this->tmpRefsBuff.push_back(refId);
