@@ -28,13 +28,18 @@ option(CPPO5M_PYTHON "Build PySink for use from a Python extension" OFF)
 find_package(EXPAT REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(Protobuf REQUIRED)
+# RapidJSON is header only
+find_path(RAPIDJSON_INCLUDE_DIR rapidjson/reader.h)
+if(NOT RAPIDJSON_INCLUDE_DIR)
+	message(FATAL_ERROR "RapidJSON headers not found; install rapidjson-dev")
+endif()
 
 set(CPPO5M_PUBLIC_HEADERS
 	cppo5m.h model.h handler.h sink.h pysink.h decoder.h encoder.h o5m.h osmxml.h
 	osmchangexml.h osmjson.h pbf.h filters.h io.h varint.h fixeddeque.h)
 
 add_library(cppo5m
-	model.cpp sink.cpp decoder.cpp varint.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp
+	model.cpp sink.cpp decoder.cpp varint.cpp osmtime.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp
 	pbf.cpp filters.cpp io.cpp
 	pbf/fileformat.pb.cc pbf/osmformat.pb.cc
 	iso8601lib/iso8601.c)
@@ -44,9 +49,10 @@ target_include_directories(cppo5m PUBLIC
 	$<INSTALL_INTERFACE:include>
 	$<INSTALL_INTERFACE:include/cppo5m>)
 target_link_libraries(cppo5m PUBLIC protobuf::libprotobuf PRIVATE EXPAT::EXPAT ZLIB::ZLIB)
+target_include_directories(cppo5m PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	set_source_files_properties(
-		model.cpp sink.cpp decoder.cpp varint.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp pbf.cpp filters.cpp io.cpp
+		model.cpp sink.cpp decoder.cpp varint.cpp osmtime.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp pbf.cpp filters.cpp io.cpp
 		PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wno-unused-parameter")
 	# Generated protobuf sources produce warnings we cannot fix
 	set_source_files_properties(pbf/fileformat.pb.cc pbf/osmformat.pb.cc PROPERTIES COMPILE_OPTIONS "-w")

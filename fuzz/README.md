@@ -10,6 +10,7 @@ Then run one against its seed corpus, for example for a minute:
 	./fuzz/fuzz_o5m fuzz/corpus/o5m -max_total_time=60
 	./fuzz/fuzz_osmxml fuzz/corpus/osmxml -max_total_time=60
 	./fuzz/fuzz_osmchangexml fuzz/corpus/osmchangexml -max_total_time=60
+	./fuzz/fuzz_osmjson fuzz/corpus/osmjson -max_total_time=60
 	./fuzz/fuzz_pbf fuzz/corpus/pbf -max_total_time=60
 
 A target fails if a decoder crashes, trips a sanitizer, hangs, or throws

@@ -27,7 +27,7 @@ inline void FuzzDecode(OsmFormat format, const uint8_t *data, size_t size)
 		return;
 	}
 
-	const OsmFormat formats[] = {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::Pbf};
+	const OsmFormat formats[] = {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::Pbf, OsmFormat::OsmJson};
 	for(OsmFormat outFormat : formats)
 	{
 		auto sink = std::make_shared<StringSink>();
@@ -43,13 +43,6 @@ inline void FuzzDecode(OsmFormat format, const uint8_t *data, size_t size)
 		catch(const std::range_error &)
 		{
 			continue; //A value too large for PBF
-		}
-
-		if(outFormat == OsmFormat::O5m)
-		{
-			//JSON has no decoder; writing it must simply not fail
-			OsmJsonEncode json(std::make_shared<StringSink>());
-			decoded.StreamTo(json);
 		}
 
 		//Our own output must always decode

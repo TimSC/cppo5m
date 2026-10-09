@@ -5,7 +5,7 @@ CPPO5M_CXXFLAGS = -std=c++17 -Wall -Wextra -Wno-unused-parameter -fPIC $(CXXFLAG
 LIBS = -lexpat -lprotobuf -lz
 
 LIB = libcppo5m.a
-OBJS = model.o sink.o decoder.o varint.o o5m.o osmxml.o osmchangexml.o osmjson.o pbf.o filters.o io.o \
+OBJS = model.o sink.o decoder.o varint.o osmtime.o o5m.o osmxml.o osmchangexml.o osmjson.o pbf.o filters.o io.o \
 	pbf/fileformat.pb.o pbf/osmformat.pb.o iso8601lib/iso8601.co
 HEADERS = $(wildcard *.h) $(wildcard pbf/*.h)
 # Headers a program using the library includes
@@ -55,14 +55,15 @@ install: $(LIB) o5mconvert
 # Fuzz the decoders with libFuzzer; needs clang. Run one with, for example,
 #   ./fuzz/fuzz_o5m fuzz/corpus/o5m -max_total_time=60
 FUZZ_CXX ?= clang++
-FUZZ_FLAGS = -std=c++17 -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined
-FUZZ_SRCS = model.cpp sink.cpp decoder.cpp varint.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp pbf.cpp \
+FUZZ_FLAGS = -std=c++17 -g -O1 -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined \
+	-fsanitize-ignorelist=fuzz/sanitizer-ignore.txt
+FUZZ_SRCS = model.cpp sink.cpp decoder.cpp varint.cpp osmtime.cpp o5m.cpp osmxml.cpp osmchangexml.cpp osmjson.cpp pbf.cpp \
 	filters.cpp io.cpp pbf/fileformat.pb.cc pbf/osmformat.pb.cc
-FUZZERS = fuzz/fuzz_o5m fuzz/fuzz_osmxml fuzz/fuzz_osmchangexml fuzz/fuzz_pbf
+FUZZERS = fuzz/fuzz_o5m fuzz/fuzz_osmxml fuzz/fuzz_osmchangexml fuzz/fuzz_osmjson fuzz/fuzz_pbf
 
 fuzz/iso8601.fuzz.o: iso8601lib/iso8601.c
 	$(FUZZ_CXX:clang++=clang) -g -O1 -fsanitize=address,undefined -c -o $@ $<
-fuzz/fuzz_%: fuzz/fuzz_%.cpp fuzz/fuzz_common.h fuzz/iso8601.fuzz.o $(FUZZ_SRCS) $(HEADERS)
+fuzz/fuzz_%: fuzz/fuzz_%.cpp fuzz/fuzz_common.h fuzz/sanitizer-ignore.txt fuzz/iso8601.fuzz.o $(FUZZ_SRCS) $(HEADERS)
 	$(FUZZ_CXX) $(FUZZ_FLAGS) -w $< $(FUZZ_SRCS) fuzz/iso8601.fuzz.o $(LIBS) -o $@
 fuzz: $(FUZZERS)
 

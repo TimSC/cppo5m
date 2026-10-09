@@ -9,16 +9,18 @@
 using namespace std;
 
 static const char *usage =
-	"Convert between osm, o5m and pbf file formats\n"
+	"Convert between osm, o5m, pbf and json file formats\n"
 	"Usage: o5mconvert INPUT [-o OUTPUT] [options]\n"
 	"  INPUT             input file, or - for console stream\n"
 	"  -o, --output FILE output file (console if omitted)\n"
 	"  --in-osm          input file format is osm\n"
 	"  --in-o5m          input file format is o5m\n"
 	"  --in-pbf          input file format is pbf\n"
+	"  --in-json         input file format is OSM JSON\n"
 	"  --out-osm         output file format is osm\n"
 	"  --out-o5m         output file format is o5m\n"
 	"  --out-pbf         output file format is pbf\n"
+	"  --out-json        output file format is OSM JSON\n"
 	"  --out-null        do not write output\n"
 	"  --sort            sort output by ID (memory intensive)\n"
 	"  --help            show this message\n";
@@ -30,8 +32,8 @@ int main(int argc, char* argv[])
 
 	vector<string> inputFiles;
 	string outputFile;
-	bool formatInOsm = false, formatInO5m = false, formatInPbf = false;
-	bool formatOutOsm = false, formatOutO5m = false, formatOutPbf = false;
+	bool formatInOsm = false, formatInO5m = false, formatInPbf = false, formatInJson = false;
+	bool formatOutOsm = false, formatOutO5m = false, formatOutPbf = false, formatOutJson = false;
 	bool formatOutNull = false, sort = false;
 
 	for(int i=1; i<argc; i++)
@@ -41,9 +43,11 @@ int main(int argc, char* argv[])
 		else if(arg == "--in-osm") formatInOsm = true;
 		else if(arg == "--in-o5m") formatInO5m = true;
 		else if(arg == "--in-pbf") formatInPbf = true;
+		else if(arg == "--in-json") formatInJson = true;
 		else if(arg == "--out-osm") formatOutOsm = true;
 		else if(arg == "--out-o5m") formatOutO5m = true;
 		else if(arg == "--out-pbf") formatOutPbf = true;
+		else if(arg == "--out-json") formatOutJson = true;
 		else if(arg == "--out-null") formatOutNull = true;
 		else if(arg == "--sort") sort = true;
 		else if(arg == "-o" || arg == "--output")
@@ -73,7 +77,8 @@ int main(int argc, char* argv[])
 		cerr << "Specify exactly one input file." << endl << usage;
 		return 2;
 	}
-	if(formatInOsm + formatInO5m + formatInPbf > 1 || formatOutOsm + formatOutO5m + formatOutPbf + formatOutNull > 1)
+	if(formatInOsm + formatInO5m + formatInPbf + formatInJson > 1 ||
+		formatOutOsm + formatOutO5m + formatOutPbf + formatOutJson + formatOutNull > 1)
 	{
 		cerr << "Specify at most one input format and one output format." << endl;
 		return 2;
@@ -87,6 +92,7 @@ int main(int argc, char* argv[])
 		OsmFormat inFormat = OsmFormat::OsmXml;
 		if(formatInO5m) inFormat = OsmFormat::O5m;
 		else if(formatInPbf) inFormat = OsmFormat::Pbf;
+		else if(formatInJson) inFormat = OsmFormat::OsmJson;
 		else if(formatInOsm) inFormat = OsmFormat::OsmXml;
 		else if(!consoleInput) inFormat = FormatFromFilename(inputFile);
 
@@ -94,6 +100,7 @@ int main(int argc, char* argv[])
 		OsmFormat outFormat = OsmFormat::OsmXml;
 		if(formatOutO5m) outFormat = OsmFormat::O5m;
 		else if(formatOutPbf) outFormat = OsmFormat::Pbf;
+		else if(formatOutJson) outFormat = OsmFormat::OsmJson;
 		else if(formatOutOsm) outFormat = OsmFormat::OsmXml;
 		else if(!consoleOutput && !formatOutNull) outFormat = FormatFromFilename(outputFile);
 

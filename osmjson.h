@@ -1,10 +1,13 @@
 #ifndef CPPO5M_OSMJSON_H
 #define CPPO5M_OSMJSON_H
 
+#include <istream>
 #include <memory>
 #include <string>
+#include "decoder.h"
 #include "encoder.h"
 #include "model.h"
+#include "osmxml.h"
 
 ///Encodes a stream of map objects as OSM JSON, the format the OSM API returns
 ///for requests ending in .json:
@@ -15,9 +18,10 @@
 ///     {"type":"relation","id":3,...,"members":[{"type":"way","ref":2,"role":""}]}
 ///    ]}
 ///
-///Metadata that is zero or empty is left out, as are empty tags. A deleted
-///object has "visible":false, and a deleted node has no position. There is no
-///decoder for this format.
+///Metadata that is zero or empty is left out, as are empty tags, an empty
+///list of way nodes and an empty list of relation members. A deleted object
+///has "visible":false, and a deleted node has no position. This matches what
+///the OSM API writes.
 class OsmJsonEncode : public OsmEncoder
 {
 private:
@@ -43,6 +47,34 @@ public:
 	void StoreWay(const OsmWay &way) override;
 	void StoreRelation(const OsmRelation &relation) override;
 	void Finish() override;
+};
+
+///Decodes OSM JSON, as written by OsmJsonEncode, the OSM API and Overpass.
+///
+///Members this library has no place for are skipped, such as the "center" and
+///"geometry" Overpass can add. An element whose type is not node, way or
+///relation is an error, as is the "error" element the OSM API appends when a
+///response is incomplete.
+///
+///The limits are the ones used for XML and guard the same things; the two
+///about XML attributes do not apply. Nesting depth counts every object and
+///array, so an ordinary document needs maxDepth of at least 5.
+///
+///The parser cannot pause part way, so the first call to DecodeNext reads the
+///whole document, sending objects to the handler as they complete, and the
+///second sends Finish.
+class OsmJsonDecode : public OsmDecoder
+{
+private:
+	std::istream handle;
+	OsmXmlLimits limits;
+	bool parsed;
+
+public:
+	OsmJsonDecode(std::streambuf &input, IDataStreamHandler &output,
+		const OsmXmlLimits &limits = OsmXmlLimits());
+
+	bool DecodeNext() override;
 };
 
 ///Appends text as a JSON string, including the quotes. Bytes that are not

@@ -163,7 +163,7 @@ static bool Equivalent(const OsmData &a, const OsmData &b)
 	return true;
 }
 
-static const OsmFormat allFormats[] = {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::Pbf};
+static const OsmFormat allFormats[] = {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::Pbf, OsmFormat::OsmJson};
 
 // ************* Tests *************
 
@@ -887,6 +887,22 @@ static void TestJson()
 	CHECK(json.find("{\"type\":\"node\",\"id\":1,\"visible\":false}") != string::npos);
 	CHECK(json.find("{\"type\":\"node\",\"id\":2,\"lat\":0,\"lon\":180}") != string::npos);
 
+	//Empty lists are left out, as the OSM API does for deleted ways and relations
+	OsmData hollow;
+	OsmWay noNodes;
+	noNodes.objId = 3;
+	noNodes.metaData.visible = false;
+	hollow.ways.push_back(noNodes);
+	OsmRelation noMembers;
+	noMembers.objId = 4;
+	hollow.relations.push_back(noMembers);
+	json = EncodeJson(hollow);
+	CHECK(json.find("{\"type\":\"way\",\"id\":3,\"visible\":false}") != string::npos);
+	CHECK(json.find("{\"type\":\"relation\",\"id\":4}") != string::npos);
+	OsmData hollowBack;
+	LoadFromOsmJson(json, hollowBack);
+	CHECK(hollowBack == hollow);
+
 	//Strings: control characters are escaped and invalid UTF-8 replaced
 	string out;
 	AppendJsonString(string("a\x01" "b\xff" "c\x1f\t\r", 8), out);
@@ -935,6 +951,175 @@ static void TestJson()
 		if(depth < minDepth) minDepth = depth;
 	}
 	CHECK(depth == 0 && minDepth == 0 && !inString);
+}
+
+static void TestJsonDecode()
+{
+	//What the encoder writes reads back, including through the helper functions
+	OsmData data = SampleData();
+	string json = EncodeJson(data);
+	OsmData back;
+	LoadFromOsmJson(json, back);
+	CHECK(Equivalent(back, data));
+	istringstream in(json);
+	OsmData fromStream;
+	LoadFromOsmJson(*in.rdbuf(), fromStream);
+	CHECK(fromStream == back);
+	ostringstream saved;
+	SaveToOsmJson(back, *saved.rdbuf());
+	CHECK(saved.str() == json);
+	CHECK(FormatFromFilename("map.json") == OsmFormat::OsmJson);
+
+	//A document as the OSM API or Overpass would send it: members in any order,
+	//whitespace, escapes, and extras this library has no place for
+	OsmData parsed;
+	LoadFromOsmJson(string(R"({
+		"version": 0.6, "generator": "Overpass API", "osm3s": {"timestamp_osm_base": "x", "nested": [1, {"a": []}]},
+		"bounds": {"minlat": 1, "minlon": 2.5, "maxlat": 3, "maxlon": 4, "extra": {"x": 1}},
+		"elements": [
+			{"tags": {"name": "Caf\u00e9 \"A\"\n", "empty": ""}, "lon": -2.5, "lat": 1.5, "id": -5, "type": "node",
+			 "timestamp": "2020-01-02T03:04:05Z", "version": 3, "changeset": 9, "uid": 4, "user": "A & B"},
+			{"type": "node", "id": 6, "visible": false, "version": 2},
+			{"type": "way", "id": 7, "nodes": [-5, 6, 9007199254740993], "center": {"lat": 1, "lon": 2},
+			 "geometry": [{"lat": 1, "lon": 2}, null], "bounds": {"minlat": 0}},
+			{"type": "relation", "id": 8, "members": [
+				{"type": "way", "ref": 7, "role": "outer", "geometry": [[1, 2]]},
+				{"ref": -5, "type": "node"}], "tags": {}}
+		],
+		"remark": null
+	})"), parsed);
+	CHECK(parsed.bounds.size() == 1 && parsed.bounds[0] == Bounds(2.5, 1, 4, 3));
+	CHECK(parsed.nodes.size() == 2 && parsed.ways.size() == 1 && parsed.relations.size() == 1);
+	if(parsed.nodes.size() == 2 && parsed.ways.size() == 1 && parsed.relations.size() == 1)
+	{
+		const OsmNode &n = parsed.nodes[0];
+		CHECK(n.objId == -5 && n.lat == 1.5 && n.lon == -2.5);
+		CHECK(n.metaData.version == 3 && n.metaData.changeset == 9 && n.metaData.uid == 4);
+		CHECK(n.metaData.username == "A & B" && n.metaData.visible);
+		CHECK(n.metaData.timestamp == 1577934245);
+		CHECK(n.tags == (TagMap{{"name", "Caf\xc3\xa9 \"A\"\n"}, {"empty", ""}}));
+		CHECK(parsed.nodes[1].objId == 6 && !parsed.nodes[1].metaData.visible && parsed.nodes[1].lat == 0);
+		//IDs beyond what a double can hold exactly are kept
+		CHECK(parsed.ways[0].refs == (vector<int64_t>{-5, 6, 9007199254740993LL}));
+		CHECK(parsed.ways[0].tags.empty());
+		CHECK(parsed.relations[0].members == (vector<RelationMember>{
+			RelationMember(ObjectType::Way, 7, "outer"), RelationMember(ObjectType::Node, -5, "")}));
+	}
+
+	//A reset marks each change of object type
+	struct Recorder : public IDataStreamHandler
+	{
+		string calls;
+		void StoreBounds(const Bounds &) override { calls += "b"; }
+		void StoreNode(const OsmNode &) override { calls += "n"; }
+		void StoreWay(const OsmWay &) override { calls += "w"; }
+		void StoreRelation(const OsmRelation &) override { calls += "r"; }
+		void Reset() override { calls += "|"; }
+		void Finish() override { calls += "."; }
+	};
+	Recorder recorder;
+	LoadFromOsmJson(json, recorder);
+	CHECK(recorder.calls == "bnnnnn|ww|rr.");
+
+	//Malformed documents, and well formed ones that are not OSM JSON
+	const char *bad[] = {
+		"",
+		"[]",
+		"42",
+		"{",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1}",
+		"{\"elements\":[]} {}",
+		"{\"elements\":{}}",
+		"{\"elements\":7}",
+		"{\"elements\":[5]}",
+		"{\"elements\":[[]]}",
+		"{\"elements\":[{\"id\":1}]}",
+		"{\"elements\":[{\"type\":\"area\",\"id\":1}]}",
+		"{\"elements\":[{\"type\":7,\"id\":1}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":\"1\"}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1.5}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":99999999999999999999}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"lat\":\"north\"}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"lat\":NaN}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"version\":-1}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"visible\":\"no\"}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"timestamp\":\"yesterday\"}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"tags\":{\"k\":5}}]}",
+		"{\"elements\":[{\"type\":\"node\",\"id\":1,\"tags\":[]}]}",
+		"{\"elements\":[{\"type\":\"way\",\"id\":1,\"nodes\":[\"2\"]}]}",
+		"{\"elements\":[{\"type\":\"way\",\"id\":1,\"nodes\":{}}]}",
+		"{\"elements\":[{\"type\":\"relation\",\"id\":1,\"members\":[{\"ref\":1}]}]}",
+		"{\"elements\":[{\"type\":\"relation\",\"id\":1,\"members\":[{\"type\":\"area\",\"ref\":1}]}]}",
+		"{\"elements\":[{\"type\":\"relation\",\"id\":1,\"members\":[3]}]}",
+		"{\"bounds\":[],\"elements\":[]}",
+		//The OSM API marks an incomplete response this way
+		"{\"elements\":[{\"type\":\"node\",\"id\":1},{\"error\":\"Mismatch in tags key and value size\"}]}",
+	};
+	for(const char *doc : bad)
+	{
+		OsmData ignored;
+		bool refused = Throws<OsmDecodeError>([&]{ LoadFromOsmJson(string(doc), ignored); });
+		if(!refused)
+			cerr << "accepted: " << doc << endl;
+		CHECK(refused);
+	}
+	//The error says where
+	try
+	{
+		OsmData ignored;
+		LoadFromOsmJson(string("{\"elements\":[{\"type\":\"node\",,}]}"), ignored);
+		CHECK(false);
+	}
+	catch(const OsmDecodeError &err)
+	{
+		CHECK(string(err.what()).find("JSON error") == 0 && string(err.what()).find(" at offset ") != string::npos);
+	}
+
+	//A document with no elements member is an empty map
+	OsmData none;
+	LoadFromOsmJson(string("{\"version\":\"0.6\"}"), none);
+	CHECK(none.IsEmpty());
+
+	//Limits
+	const string doc = "{\"elements\":["
+		"{\"type\":\"node\",\"id\":1,\"lat\":0,\"lon\":0,\"tags\":{\"a\":\"1\",\"b\":\"2\"}},"
+		"{\"type\":\"way\",\"id\":2,\"nodes\":[1,1,1]},"
+		"{\"type\":\"relation\",\"id\":3,\"members\":[{\"type\":\"node\",\"ref\":1,\"role\":\"\"},"
+		"{\"type\":\"way\",\"ref\":2,\"role\":\"\"}]}]}";
+	auto load = [&](const OsmXmlLimits &limits) { OsmData out; LoadFromOsmJson(doc, out, limits); return out; };
+	OsmXmlLimits exact;
+	exact.maxBytes = doc.size();
+	exact.maxDepth = 5;
+	exact.maxObjects = 3;
+	exact.maxTagsPerObject = 2;
+	exact.maxWayNodesPerObject = 3;
+	exact.maxRelationMembersPerObject = 2;
+	CHECK(load(exact).relations.size() == 1);
+	struct Case { const char *name; size_t OsmXmlLimits::*field; size_t value; };
+	const Case cases[] = {
+		{"maxBytes", &OsmXmlLimits::maxBytes, doc.size() - 1},
+		{"maxDepth", &OsmXmlLimits::maxDepth, 4},
+		{"maxObjects", &OsmXmlLimits::maxObjects, 2},
+		{"maxTagsPerObject", &OsmXmlLimits::maxTagsPerObject, 1},
+		{"maxWayNodesPerObject", &OsmXmlLimits::maxWayNodesPerObject, 2},
+		{"maxRelationMembersPerObject", &OsmXmlLimits::maxRelationMembersPerObject, 1},
+	};
+	for(const Case &c : cases)
+	{
+		OsmXmlLimits limits;
+		limits.*(c.field) = c.value;
+		CHECK(HitsLimit(c.name, [&]{ load(limits); }));
+	}
+	//Depth is counted inside values that are being skipped too
+	OsmXmlLimits shallow;
+	shallow.maxDepth = 10;
+	string nested = "{\"junk\":" + string(50, '[') + string(50, ']') + ",\"elements\":[]}";
+	OsmData ignored;
+	CHECK(HitsLimit("maxDepth", [&]{ LoadFromOsmJson(nested, ignored, shallow); }));
+	//Very deep nesting does not exhaust the stack when there is no limit
+	string deep = "{\"junk\":" + string(200000, '[') + string(200000, ']') + ",\"elements\":[]}";
+	LoadFromOsmJson(deep, ignored);
+	CHECK(ignored.IsEmpty());
 }
 
 static void TestXmlLimits()
@@ -1194,6 +1379,7 @@ int main()
 		{"pbf blocks", TestPbfBlocks},
 		{"xml", TestXml},
 		{"json", TestJson},
+		{"json decode", TestJsonDecode},
 		{"xml limits", TestXmlLimits},
 		{"osmchange", TestOsmChange},
 		{"filters", TestFilters},

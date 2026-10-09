@@ -12,6 +12,7 @@
 /fuzz/fuzz_o5m
 /fuzz/fuzz_osmxml
 /fuzz/fuzz_osmchangexml
+/fuzz/fuzz_osmjson
 /fuzz/fuzz_pbf
 /fuzz/crash-*
 /fuzz/timeout-*

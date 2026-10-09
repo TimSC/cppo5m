@@ -6,9 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <expat.h>
-extern "C" {
-#include "iso8601lib/iso8601.h"
-}
+#include "osmtime.h"
 using namespace std;
 
 void OsmXmlLimits::Apply(const std::map<std::string, int64_t> &limitsIn)
@@ -209,17 +207,6 @@ static double ParseCoord(const char *text)
 	return value;
 }
 
-static int64_t ParseTimestamp(const char *text)
-{
-	struct tm dt;
-	memset(&dt, 0, sizeof(dt));
-	int timezoneOffsetMin = 0;
-	if(!ParseIso8601Datetime(text, &dt, &timezoneOffsetMin))
-		throw OsmDecodeError(std::string("Invalid timestamp: ") + text);
-	TmToUtc(&dt, timezoneOffsetMin);
-	return (int64_t)timegm(&dt);
-}
-
 OsmXmlObjectReader::OsmXmlObjectReader(const OsmXmlLimits &limitsIn) :
 	limits(limitsIn),
 	active(false),
@@ -272,7 +259,7 @@ void OsmXmlObjectReader::StartObject(const char *name, const char **atts)
 		else if(strcmp(key, "version") == 0)
 			obj.metaData.version = ParseInt(value);
 		else if(strcmp(key, "timestamp") == 0)
-			obj.metaData.timestamp = ParseTimestamp(value);
+			obj.metaData.timestamp = ParseOsmTimestamp(value);
 		else if(strcmp(key, "changeset") == 0)
 			obj.metaData.changeset = ParseInt(value);
 		else if(strcmp(key, "uid") == 0)
@@ -568,15 +555,9 @@ static void AppendObjectStart(const char *name, const OsmObject &obj, std::strin
 	const MetaData &metaData = obj.metaData;
 	if(metaData.timestamp != 0)
 	{
-		time_t tt = metaData.timestamp;
-		char buf[50];
-		struct tm tmbuf;
-		if(gmtime_r(&tt, &tmbuf) != nullptr && strftime(buf, sizeof(buf), "%FT%TZ", &tmbuf) > 0)
-		{
-			out.append(" timestamp=\"");
-			out.append(buf);
-			out.push_back('"');
-		}
+		std::string text;
+		if(AppendOsmTimestamp(metaData.timestamp, text))
+			out.append(" timestamp=\"" + text + "\"");
 	}
 	if(metaData.uid != 0)
 		out.append(" uid=\"" + std::to_string(metaData.uid) + "\"");

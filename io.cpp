@@ -2,6 +2,7 @@
 #include <sstream>
 #include "o5m.h"
 #include "osmchangexml.h"
+#include "osmjson.h"
 #include "pbf.h"
 using namespace std;
 
@@ -23,6 +24,8 @@ OsmFormat FormatFromFilename(const std::string &filename)
 		return OsmFormat::OsmXml;
 	if(EndsWith(name, ".pbf"))
 		return OsmFormat::Pbf;
+	if(EndsWith(name, ".json"))
+		return OsmFormat::OsmJson;
 	throw invalid_argument("File extension not recognised: " + filename);
 }
 
@@ -37,6 +40,8 @@ std::unique_ptr<OsmDecoder> MakeDecoder(OsmFormat format, std::streambuf &input,
 		return std::unique_ptr<OsmDecoder>(new OsmXmlDecode(input, output, limits));
 	case OsmFormat::Pbf:
 		return std::unique_ptr<OsmDecoder>(new PbfDecode(input, output));
+	case OsmFormat::OsmJson:
+		return std::unique_ptr<OsmDecoder>(new OsmJsonDecode(input, output, limits));
 	}
 	throw invalid_argument("Unknown format");
 }
@@ -52,6 +57,8 @@ std::unique_ptr<OsmEncoder> MakeEncoder(OsmFormat format, std::shared_ptr<ByteSi
 		return std::unique_ptr<OsmEncoder>(new OsmXmlEncode(sink, xmlAttribs));
 	case OsmFormat::Pbf:
 		return std::unique_ptr<OsmEncoder>(new PbfEncode(sink));
+	case OsmFormat::OsmJson:
+		return std::unique_ptr<OsmEncoder>(new OsmJsonEncode(sink, xmlAttribs));
 	}
 	throw invalid_argument("Unknown format");
 }
@@ -82,6 +89,12 @@ void LoadFromPbf(std::streambuf &input, IDataStreamHandler &output)
 	dec.Decode();
 }
 
+void LoadFromOsmJson(std::streambuf &input, IDataStreamHandler &output, const OsmXmlLimits &limits)
+{
+	OsmJsonDecode dec(input, output, limits);
+	dec.Decode();
+}
+
 void LoadFromOsmChangeXml(std::streambuf &input, IOsmChangeHandler &output, const OsmXmlLimits &limits)
 {
 	OsmChangeXmlDecode dec(input, output, limits);
@@ -107,6 +120,12 @@ void LoadFromPbf(const std::string &data, IDataStreamHandler &output)
 	LoadFromPbf(*buff.rdbuf(), output);
 }
 
+void LoadFromOsmJson(const std::string &data, IDataStreamHandler &output, const OsmXmlLimits &limits)
+{
+	std::istringstream buff(data);
+	LoadFromOsmJson(*buff.rdbuf(), output, limits);
+}
+
 void LoadFromOsmChangeXml(const std::string &data, IOsmChangeHandler &output, const OsmXmlLimits &limits)
 {
 	OsmChangeXmlParser parser(output, limits);
@@ -130,6 +149,12 @@ void SaveToOsmXml(const OsmData &osmData, std::streambuf &output, const TagMap &
 void SaveToPbf(const OsmData &osmData, std::streambuf &output)
 {
 	PbfEncode enc(output);
+	osmData.StreamTo(enc);
+}
+
+void SaveToOsmJson(const OsmData &osmData, std::streambuf &output, const TagMap &customAttribs)
+{
+	OsmJsonEncode enc(output, customAttribs);
 	osmData.StreamTo(enc);
 }
 

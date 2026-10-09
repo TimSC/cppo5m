@@ -1,0 +1,7 @@
+# RapidJSON 1.1.0 does pointer arithmetic on a null pointer when its internal
+# stack is first used (internal/stack.h). It is harmless and fixed in later
+# versions, but stops every fuzz run at once, so that one check is skipped for
+# RapidJSON's own headers. Everything else is still checked there, and this
+# library's code is checked in full.
+[pointer-overflow]
+src:*/rapidjson/*
