@@ -673,6 +673,44 @@ static void TestHostileInput()
 	CHECK(Throws<invalid_argument>([&]{ badName.Finish(); }));
 }
 
+///A stream buffer that can be read but not looked ahead in: peeking at it
+///reports the end of input. cppGzip's decoder behaves this way.
+class NoPeekBuf : public std::streambuf
+{
+	string data;
+	size_t pos = 0;
+protected:
+	int_type uflow() override
+	{
+		if(pos >= data.size()) return traits_type::eof();
+		return traits_type::to_int_type(data[pos++]);
+	}
+	std::streamsize xsgetn(char *out, std::streamsize n) override
+	{
+		std::streamsize count = std::min<std::streamsize>(n, data.size() - pos);
+		memcpy(out, data.data() + pos, count);
+		pos += count;
+		return count;
+	}
+public:
+	NoPeekBuf(const string &dataIn): data(dataIn) {}
+};
+
+static void TestNoPeekInput()
+{
+	//Every format decodes from a stream buffer that cannot be peeked
+	OsmData data = SampleData();
+	for(OsmFormat format : {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::Pbf, OsmFormat::OsmJson})
+	{
+		string encoded = Encode(format, data);
+		NoPeekBuf input(encoded);
+		OsmData out;
+		MakeDecoder(format, input, out)->Decode();
+		CHECK(out.nodes.size() == data.nodes.size());
+		CHECK(out == Decode(format, encoded));
+	}
+}
+
 static void TestPbfBlocks()
 {
 	//Blocks hold a limited number of objects, however many are written
@@ -1657,6 +1695,7 @@ int main()
 		{"bad input", TestBadInput},
 		{"hostile input", TestHostileInput},
 		{"pbf blocks", TestPbfBlocks},
+		{"input without peeking", TestNoPeekInput},
 		{"xml", TestXml},
 		{"json", TestJson},
 		{"json decode", TestJsonDecode},

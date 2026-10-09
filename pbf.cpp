@@ -343,14 +343,17 @@ bool PbfDecode::DecodeNext()
 	if(this->finished)
 		return false;
 
-	if(this->handle.peek() == std::char_traits<char>::eof())
+	// The input ends cleanly only between blocks. Find that out by reading
+	// rather than peeking: reading works on any stream buffer, including ones
+	// too simple to support looking ahead, such as cppGzip's decoder.
+	uint32_t blobHeaderLenNbo = 0;
+	this->handle.read((char*)&blobHeaderLenNbo, 1);
+	if(this->handle.gcount() == 0)
 	{
 		this->MarkFinished();
 		return false;
 	}
-
-	uint32_t blobHeaderLenNbo = 0;
-	ReadExactLengthPbf(handle, (char*)&blobHeaderLenNbo, sizeof(uint32_t));
+	ReadExactLengthPbf(handle, ((char*)&blobHeaderLenNbo)+1, sizeof(uint32_t)-1);
 	uint32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
 	if(blobHeaderLen > PBF_MAX_BLOB_HEADER_SIZE)
 		throw OsmDecodeError("PBF blob header is larger than the format allows");
