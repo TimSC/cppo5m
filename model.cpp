@@ -94,6 +94,7 @@ void OsmData::Clear()
 	ways.clear();
 	relations.clear();
 	bounds.clear();
+	attributes.clear();
 	isDiff = false;
 }
 
@@ -105,6 +106,8 @@ bool OsmData::IsEmpty() const
 void OsmData::StreamTo(IDataStreamHandler &out, bool finishStream) const
 {
 	out.StoreIsDiff(this->isDiff);
+	if(!this->attributes.empty())
+		out.StoreAttributes(this->attributes);
 	for(const Bounds &b : this->bounds)
 		out.StoreBounds(b);
 	for(const OsmNode &node : this->nodes)
@@ -128,6 +131,12 @@ void OsmData::StoreObject(const OsmObject &obj)
 void OsmData::StoreIsDiff(bool d)
 {
 	this->isDiff = d;
+}
+
+void OsmData::StoreAttributes(const TagMap &attribs)
+{
+	for(TagMap::const_iterator it=attribs.begin(); it!=attribs.end(); it++)
+		this->attributes[it->first] = it->second;
 }
 
 void OsmData::StoreBounds(const Bounds &b)
@@ -176,7 +185,7 @@ std::set<int64_t> OsmData::GetRelationIds() const
 
 bool OsmData::operator==(const OsmData &other) const
 {
-	return isDiff == other.isDiff && bounds == other.bounds && nodes == other.nodes &&
+	return isDiff == other.isDiff && attributes == other.attributes && bounds == other.bounds && nodes == other.nodes &&
 		ways == other.ways && relations == other.relations;
 }
 

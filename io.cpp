@@ -52,7 +52,7 @@ std::unique_ptr<OsmEncoder> MakeEncoder(OsmFormat format, std::shared_ptr<ByteSi
 	switch(format)
 	{
 	case OsmFormat::O5m:
-		return std::unique_ptr<OsmEncoder>(new O5mEncode(sink));
+		return std::unique_ptr<OsmEncoder>(new O5mEncode(sink, xmlAttribs));
 	case OsmFormat::OsmXml:
 		return std::unique_ptr<OsmEncoder>(new OsmXmlEncode(sink, xmlAttribs));
 	case OsmFormat::Pbf:

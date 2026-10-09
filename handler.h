@@ -1,6 +1,9 @@
 #ifndef CPPO5M_HANDLER_H
 #define CPPO5M_HANDLER_H
 
+#include <map>
+#include <string>
+
 struct Bounds;
 class OsmNode;
 class OsmWay;
@@ -19,6 +22,10 @@ public:
 
 	///Whether the stream is a diff (o5c) rather than a snapshot. Sent before any object.
 	virtual void StoreIsDiff(bool isDiff) {}
+	///Attributes of the document as a whole that are not part of the map, such
+	///as the edit IDs a dump was taken at. Sent before any object, and only if
+	///the document has some. The version and generator are never included.
+	virtual void StoreAttributes(const std::map<std::string, std::string> &attribs) {}
 	virtual void StoreBounds(const Bounds &bounds) {}
 	virtual void StoreNode(const OsmNode &node) {}
 	virtual void StoreWay(const OsmWay &way) {}

@@ -49,6 +49,11 @@ void DeduplicateOsm::StoreIsDiff(bool isDiff)
 	out.StoreIsDiff(isDiff);
 }
 
+void DeduplicateOsm::StoreAttributes(const TagMap &attribs)
+{
+	out.StoreAttributes(attribs);
+}
+
 void DeduplicateOsm::StoreBounds(const Bounds &bounds)
 {
 	out.StoreBounds(bounds);

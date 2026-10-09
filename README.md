@@ -117,11 +117,13 @@ A conversion tool modelled after osmconvert, mainly useful for testing. The form
 ## Format notes
 
 * Coordinates are stored to seven decimal places in o5m and, with the default settings, in PBF.
+* o5m delta codes node coordinates in 32 bit arithmetic that wraps round, so a step across the antimeridian reads correctly whichever program wrote the file. Coordinates beyond about 214 degrees do not fit and are refused.
 * PBF keeps only the first bounding box, and stores versions and user IDs in 32 bits; the encoder refuses larger values.
 * The PBF encoder writes blocks of up to 8000 objects, as the format recommends, and holds one block in memory at a time. `maxBlockObjects` changes this.
 * XML output is always well formed: bytes that are not valid UTF-8, and characters XML 1.0 does not allow, are written as U+FFFD. o5m and PBF store strings as they are.
 * OSM JSON leaves out metadata that is zero or empty, empty tags, empty way node and relation member lists, and the position of a deleted node, as the OSM API does. Only bounds sent before the first object are written.
 * The JSON decoder skips members it has no place for, such as the `center` and `geometry` Overpass can add. It reads the whole document in its first `DecodeNext` call, because the parser cannot pause; objects still reach the handler one at a time.
+* Attributes of the document as a whole, such as a copyright notice, can be given to the XML, JSON and o5m encoders, and decoders pass any they find to `StoreAttributes`. XML holds them on the root element and JSON at the top level. o5m has no standard place, so they go in a dataset of this library's own (type `0xc0`) straight after the header; other programs skip it, as the format requires for datasets they do not know, though osmconvert prints a warning. PBF does not store them.
 * Coordinates must be finite numbers; the XML decoder and the o5m and PBF encoders refuse anything else.
 * The PBF encoder does not write the visible flag unless `encodeHistorical` is set.
 * In o5m an object with version zero has no room for its timestamp, changeset or user.

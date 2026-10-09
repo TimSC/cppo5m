@@ -347,6 +347,13 @@ void OsmXmlParser::OnStartElement(const char *name, const char **atts)
 	{
 		if(strcmp(name, "osm") != 0)
 			throw OsmDecodeError(std::string("Expected an osm root element but found ") + name);
+
+		TagMap attribs;
+		for(size_t i=0; atts[i] != nullptr; i += 2)
+			if(strcmp(atts[i], "version") != 0 && strcmp(atts[i], "generator") != 0)
+				attribs[atts[i]] = atts[i+1];
+		if(!attribs.empty())
+			this->output.StoreAttributes(attribs);
 	}
 	else if(this->depth == 2)
 	{

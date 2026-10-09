@@ -1122,6 +1122,161 @@ static void TestJsonDecode()
 	CHECK(ignored.IsEmpty());
 }
 
+static void TestO5mLongitudeWrap()
+{
+	//o5m delta codes node coordinates in 32 bit arithmetic. Going from +179 to
+	//-179 degrees is stored as the positive delta 714967296, which reaches the
+	//right value only by wrapping round. This is the example in the format's
+	//description, and what osmconvert writes.
+	OsmData data;
+	const double lons[] = {179.0, -179.0, 179.5, -180.0, 180.0, 0.0, -179.9999999, 179.9999999};
+	int64_t id = 1;
+	for(double lon : lons)
+	{
+		OsmNode n;
+		n.objId = id++;
+		n.lat = (id % 2) ? 89.5 : -89.5;
+		n.lon = lon;
+		data.nodes.push_back(n);
+	}
+	string encoded = Encode(OsmFormat::O5m, data);
+	CHECK(Decode(OsmFormat::O5m, encoded) == data);
+
+	//The second node's longitude delta, exactly as the description gives it
+	string wrapped = EncodeZigzag(714967296);
+	CHECK(encoded.find(wrapped) != string::npos);
+	CHECK(encoded.find(EncodeZigzag(-3580000000LL)) == string::npos);
+
+	//A file from a program using 64 bit deltas reads the same way
+	string header("\xff\xe0\x04o5m2", 7);
+	auto node = [](int64_t idDelta, int64_t lonDelta, int64_t latDelta) {
+		string body = EncodeZigzag(idDelta) + string("\0", 1) + EncodeZigzag(lonDelta) + EncodeZigzag(latDelta);
+		return string("\x10") + EncodeVarint(body.size()) + body;
+	};
+	for(int64_t delta : {(int64_t)714967296, (int64_t)-3580000000LL})
+	{
+		OsmData decoded = Decode(OsmFormat::O5m, header + node(1, 1790000000, 100000000) + node(1, delta, 0) + "\xfe");
+		CHECK(decoded.nodes.size() == 2);
+		if(decoded.nodes.size() == 2)
+		{
+			CHECK(decoded.nodes[0].lon == 179.0 && decoded.nodes[0].lat == 10.0);
+			CHECK(decoded.nodes[1].lon == -179.0 && decoded.nodes[1].lat == 10.0);
+		}
+	}
+
+	//Coordinates the format's 32 bits cannot hold are refused, not wrapped
+	OsmData outside;
+	outside.nodes.push_back(Node(1, 0, 215));
+	CHECK(Throws<invalid_argument>([&]{ Encode(OsmFormat::O5m, outside); }));
+	outside.nodes[0].lon = -215;
+	CHECK(Throws<invalid_argument>([&]{ Encode(OsmFormat::O5m, outside); }));
+	outside.nodes[0].lon = 214;
+	CHECK(Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, outside)) == outside);
+}
+
+static void TestAttributes()
+{
+	//Attributes of the document itself: written by o5m, XML and JSON, and read back
+	TagMap attribs;
+	attribs["edit_activity_id"] = "123456789012";
+	attribs["atomic_edit_id"] = "42";
+	attribs["note"] = "Caf\xc3\xa9 <&> \"quoted\"";
+	attribs["skipped"] = "";
+	attribs["generator"] = "test";
+	TagMap expected = attribs;
+	expected.erase("skipped");
+	expected.erase("generator");
+
+	OsmData data = SampleData();
+	const OsmFormat withAttribs[] = {OsmFormat::O5m, OsmFormat::OsmXml, OsmFormat::OsmJson};
+	for(OsmFormat format : withAttribs)
+	{
+		auto sink = make_shared<StringSink>();
+		auto encoder = MakeEncoder(format, sink, attribs);
+		data.StreamTo(*encoder);
+		OsmData decoded = Decode(format, sink->data);
+		CHECK(decoded.attributes == expected);
+		//The map itself is unaffected
+		decoded.attributes.clear();
+		CHECK(Equivalent(decoded, data));
+		//A document with attributes and nothing else
+		auto emptySink = make_shared<StringSink>();
+		auto emptyEncoder = MakeEncoder(format, emptySink, attribs);
+		OsmData().StreamTo(*emptyEncoder);
+		CHECK(Decode(format, emptySink->data).attributes == expected);
+		//Without attributes none are reported
+		CHECK(Decode(format, Encode(format, data)).attributes.empty());
+	}
+	//PBF has nowhere to put them and writes the map as usual
+	auto pbfSink = make_shared<StringSink>();
+	auto pbfEncoder = MakeEncoder(OsmFormat::Pbf, pbfSink, attribs);
+	data.StreamTo(*pbfEncoder);
+	CHECK(pbfSink->data == Encode(OsmFormat::Pbf, data));
+
+	//They reach a handler before the bounds and any object
+	struct Recorder : public IDataStreamHandler
+	{
+		string calls;
+		void StoreAttributes(const TagMap &) override { calls += "a"; }
+		void StoreBounds(const Bounds &) override { calls += "b"; }
+		void StoreNode(const OsmNode &) override { calls += "n"; }
+		void StoreWay(const OsmWay &) override { calls += "w"; }
+		void StoreRelation(const OsmRelation &) override { calls += "r"; }
+	};
+	for(OsmFormat format : withAttribs)
+	{
+		auto sink = make_shared<StringSink>();
+		auto encoder = MakeEncoder(format, sink, attribs);
+		data.StreamTo(*encoder);
+		Recorder recorder;
+		istringstream in(sink->data);
+		MakeDecoder(format, *in.rdbuf(), recorder)->Decode();
+		CHECK(recorder.calls == "abnnnnnwwrr");
+	}
+	//A store replays its attributes, and a filter passes them on
+	OsmData withAttributes = data;
+	withAttributes.attributes = expected;
+	OsmData copy;
+	DeduplicateOsm dedup(copy);
+	withAttributes.StreamTo(dedup);
+	CHECK(copy == withAttributes);
+	copy.Clear();
+	CHECK(copy.attributes.empty());
+
+	//In o5m the attributes are a dataset of our own, straight after the header,
+	//and a file without attributes is byte for byte what it was before
+	string plain = Encode(OsmFormat::O5m, data);
+	auto sink = make_shared<StringSink>();
+	O5mEncode encoder(sink, TagMap{{"k", "v"}});
+	data.StreamTo(encoder);
+	const string dataset = string("\xc0\x16" "cppo5m-attributes\0k\0v\0", 24);
+	CHECK(sink->data == plain.substr(0, 7) + dataset + plain.substr(7));
+	//Only names this format can hold
+	CHECK(Throws<invalid_argument>([&]{
+		O5mEncode bad(make_shared<StringSink>(), TagMap{{string("a\0b", 3), "v"}});
+		bad.Finish();
+	}));
+
+	//Another program's dataset of the same type is skipped, as any unknown one is
+	string foreign = plain.substr(0, 7) + string("\xc0\x05hello", 7) + plain.substr(7);
+	OsmData fromForeign = Decode(OsmFormat::O5m, foreign);
+	CHECK(fromForeign.attributes.empty() && Equivalent(fromForeign, data));
+	string unknown = plain.substr(0, 7) + string("\x20\x03" "abc", 5) + plain.substr(7);
+	CHECK(Equivalent(Decode(OsmFormat::O5m, unknown), data));
+	//Ours, but cut short
+	string broken = plain.substr(0, 7) + string("\xc0\x14" "cppo5m-attributes\0k\0", 22) + plain.substr(7);
+	CHECK(Throws<OsmDecodeError>([&]{ Decode(OsmFormat::O5m, broken); }));
+
+	//XML and JSON written elsewhere: whatever the header holds besides version and generator
+	OsmData xml;
+	LoadFromOsmXml(string("<osm version='0.6' generator='x' copyright='OSM' upload='true'><node id='1'/></osm>"), xml);
+	CHECK(xml.attributes == (TagMap{{"copyright", "OSM"}, {"upload", "true"}}));
+	OsmData json;
+	LoadFromOsmJson(string("{\"version\":0.6,\"generator\":\"x\",\"copyright\":\"OSM\",\"count\":5,"
+		"\"osm3s\":{\"copyright\":\"inner\"},\"elements\":[],\"late\":\"ignored\"}"), json);
+	CHECK(json.attributes == (TagMap{{"copyright", "OSM"}}));
+}
+
 static void TestXmlLimits()
 {
 	const string doc = "<osm><node id='1' lat='0' lon='0'><tag k='a' v='1'/><tag k='b' v='2'/></node>"
@@ -1380,6 +1535,8 @@ int main()
 		{"xml", TestXml},
 		{"json", TestJson},
 		{"json decode", TestJsonDecode},
+		{"o5m longitude wrap", TestO5mLongitudeWrap},
+		{"attributes", TestAttributes},
 		{"xml limits", TestXmlLimits},
 		{"osmchange", TestOsmChange},
 		{"filters", TestFilters},

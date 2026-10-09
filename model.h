@@ -131,16 +131,20 @@ public:
 	std::vector<OsmWay> ways;
 	std::vector<OsmRelation> relations;
 	std::vector<Bounds> bounds;
+	///Attributes of the document the data came from; see IDataStreamHandler::StoreAttributes
+	TagMap attributes;
 	bool isDiff = false;
 
 	void Clear();
+	///True if there are no objects and no bounds. Attributes are not counted.
 	bool IsEmpty() const;
-	///Sends bounds, then nodes, ways and relations with a Reset between the
-	///types, then Finish unless finishStream is false.
+	///Sends attributes if there are any, bounds, then nodes, ways and relations
+	///with a Reset between the types, then Finish unless finishStream is false.
 	void StreamTo(IDataStreamHandler &out, bool finishStream = true) const;
 	void StoreObject(const OsmObject &obj);
 
 	void StoreIsDiff(bool isDiff) override;
+	void StoreAttributes(const TagMap &attribs) override;
 	void StoreBounds(const Bounds &bounds) override;
 	void StoreNode(const OsmNode &node) override;
 	void StoreWay(const OsmWay &way) override;

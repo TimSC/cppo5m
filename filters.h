@@ -40,6 +40,7 @@ public:
 	void ResetExisting();
 
 	void StoreIsDiff(bool isDiff) override;
+	void StoreAttributes(const TagMap &attribs) override;
 	void StoreBounds(const Bounds &bounds) override;
 	void StoreNode(const OsmNode &node) override;
 	void StoreWay(const OsmWay &way) override;

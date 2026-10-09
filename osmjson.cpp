@@ -384,6 +384,17 @@ private:
 
 	std::vector<Context> stack;
 	size_t skipDepth; ///<Nesting inside a value that is being ignored
+	TagMap attributes; ///<Document attributes collected so far
+	bool elementsSeen;
+
+	///Sends the document attributes, once, before anything else is sent.
+	void FlushAttributes()
+	{
+		if(!this->attributes.empty())
+			this->output.StoreAttributes(this->attributes);
+		this->attributes.clear();
+	}
+
 	std::string key;
 	bool rootSeen;
 
@@ -550,6 +561,10 @@ private:
 		case Context::Top:
 			if(this->key == "elements" || this->key == "bounds")
 				throw OsmDecodeError("JSON " + this->key + " has the wrong type");
+			//Strings beside the version and generator are document attributes.
+			//They can only be passed on if they come before the elements.
+			if(v.kind == Kind::String && this->key != "version" && this->key != "generator" && !this->elementsSeen)
+				this->attributes[this->key] = std::string(v.text, v.length);
 			break;
 		case Context::Bounds:
 			if(this->key == "minlat") this->bounds.minLat = ToDouble(v, "bounds");
@@ -600,7 +615,7 @@ private:
 
 public:
 	JsonDocumentHandler(IDataStreamHandler &outputIn, const OsmXmlLimits &limitsIn) :
-		output(outputIn), limits(limitsIn), skipDepth(0), rootSeen(false),
+		output(outputIn), limits(limitsIn), skipDepth(0), elementsSeen(false), rootSeen(false),
 		haveType(false), type(ObjectType::Node), objId(0), lat(0.0), lon(0.0),
 		memberHasType(false), objectCount(0), anyObject(false), lastType(ObjectType::Node) {}
 
@@ -659,6 +674,7 @@ public:
 		case Context::Top:
 			if(this->key == "bounds")
 			{
+				this->FlushAttributes();
 				this->bounds = Bounds();
 				this->stack.push_back(Context::Bounds);
 			}
@@ -711,6 +727,10 @@ public:
 		this->stack.pop_back();
 		switch(finished)
 		{
+		case Context::Top:
+			if(!this->elementsSeen)
+				this->FlushAttributes();
+			break;
 		case Context::Bounds:
 			this->output.StoreBounds(this->bounds);
 			break;
@@ -743,7 +763,11 @@ public:
 		{
 		case Context::Top:
 			if(this->key == "elements")
+			{
+				this->FlushAttributes();
+				this->elementsSeen = true;
 				this->stack.push_back(Context::Elements);
+			}
 			else if(this->key == "bounds")
 				throw OsmDecodeError("JSON bounds must be an object");
 			else

@@ -43,6 +43,7 @@ private:
 	void ReadHeader();
 	void ReadBlock(std::string &out);
 	void DecodeBoundingBox(Bounds &out);
+	void DecodeAttributes();
 	void DecodeSingleString(std::istream &stream, std::string &out);
 	void ConsiderAddToStringRefTable(const std::string &firstStr, const std::string &secondStr);
 	void AddBuffToStringRefTable(const std::string &buff);
@@ -65,6 +66,13 @@ public:
 };
 
 ///Encodes a stream of map objects as o5m, or o5c if StoreIsDiff(true) comes first.
+///
+///o5m has no standard place for attributes of the document as a whole. Any
+///given to the constructor are written in a dataset of this library's own
+///(type 0xc0), straight after the header. The format tells readers to skip
+///datasets they do not know, so other programs read the file as usual, though
+///osmconvert prints a warning and drops the dataset if it rewrites the file.
+///With no attributes the dataset is not written.
 class O5mEncode : public OsmEncoder
 {
 private:
@@ -82,6 +90,7 @@ private:
 	unsigned refTableMaxSize;
 	int64_t runningRefOffset;
 	bool writtenHeader;
+	TagMap customAttribs;
 
 	void ResetDeltaCoding();
 	void WriteStart(bool isDiff);
@@ -94,9 +103,11 @@ private:
 	bool FindStringPairsIndex(const std::string &needle, size_t &indexOut);
 
 public:
-	explicit O5mEncode(std::shared_ptr<ByteSink> sink);
+	///customAttribs are written as described above; entries named version or
+	///generator, or with an empty value, are skipped.
+	explicit O5mEncode(std::shared_ptr<ByteSink> sink, const TagMap &customAttribs = TagMap());
 	///Writes to a stream buffer, which must outlive the encoder.
-	explicit O5mEncode(std::streambuf &output);
+	explicit O5mEncode(std::streambuf &output, const TagMap &customAttribs = TagMap());
 
 	void StoreIsDiff(bool isDiff) override;
 	void StoreBounds(const Bounds &bounds) override;

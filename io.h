@@ -29,7 +29,8 @@ OsmFormat FormatFromFilename(const std::string &filename);
 ///limits applies to XML and JSON only.
 std::unique_ptr<OsmDecoder> MakeDecoder(OsmFormat format, std::streambuf &input,
 	IDataStreamHandler &output, const OsmXmlLimits &limits = OsmXmlLimits());
-///xmlAttribs applies to XML and JSON only; see OsmXmlEncode and OsmJsonEncode.
+///xmlAttribs are document attributes, written by every format except PBF; see
+///OsmXmlEncode, OsmJsonEncode and O5mEncode.
 std::unique_ptr<OsmEncoder> MakeEncoder(OsmFormat format, std::shared_ptr<ByteSink> sink,
 	const TagMap &xmlAttribs = TagMap());
 std::unique_ptr<OsmEncoder> MakeEncoder(OsmFormat format, std::streambuf &output,

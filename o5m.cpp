@@ -12,6 +12,11 @@ static const unsigned char O5M_NODE = 0x10;
 static const unsigned char O5M_WAY = 0x11;
 static const unsigned char O5M_RELATION = 0x12;
 static const unsigned char O5M_BBOX = 0xdb;
+//Not part of the o5m standard: this library's dataset for document attributes.
+//Its contents start with a marker, in case another program uses the same type
+//for something else, followed by key and value strings, each ending in a zero.
+static const unsigned char O5M_ATTRIBS = 0xc0;
+static const char O5M_ATTRIBS_MARKER[] = "cppo5m-attributes";
 static const unsigned char O5M_HEADER = 0xe0;
 static const unsigned char O5M_EOF = 0xfe;
 static const unsigned char O5M_RESET = 0xff;
@@ -149,6 +154,9 @@ bool O5mDecode::DecodeBlock()
 			this->output.StoreBounds(bounds);
 		}
 		return true;
+	case O5M_ATTRIBS:
+		this->DecodeAttributes();
+		return true;
 	case O5M_RESET:
 		this->ResetDeltaCoding();
 		this->output.Reset();
@@ -174,6 +182,29 @@ void O5mDecode::DecodeBoundingBox(Bounds &out)
 	out.minLat = DecodeZigzag(stream) / 1e7;
 	out.maxLon = DecodeZigzag(stream) / 1e7;
 	out.maxLat = DecodeZigzag(stream) / 1e7;
+}
+
+void O5mDecode::DecodeAttributes()
+{
+	this->ReadBlock(this->tmpBuff);
+	const std::string &data = this->tmpBuff;
+	const size_t markerLen = sizeof(O5M_ATTRIBS_MARKER); //Includes its zero
+	if(data.size() < markerLen || data.compare(0, markerLen, O5M_ATTRIBS_MARKER, markerLen) != 0)
+		return; //Some other program's use of this dataset type
+
+	TagMap attribs;
+	size_t pos = markerLen;
+	while(pos < data.size())
+	{
+		size_t keyEnd = data.find('\0', pos);
+		size_t valueEnd = keyEnd == std::string::npos ? keyEnd : data.find('\0', keyEnd + 1);
+		if(valueEnd == std::string::npos)
+			throw OsmDecodeError("o5m attributes dataset is cut short");
+		attribs[data.substr(pos, keyEnd - pos)] = data.substr(keyEnd + 1, valueEnd - keyEnd - 1);
+		pos = valueEnd + 1;
+	}
+	if(!attribs.empty())
+		this->output.StoreAttributes(attribs);
 }
 
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
@@ -288,8 +319,9 @@ void O5mDecode::DecodeNode()
 
 	this->DecodeObjectStart(stream, node);
 
-	this->lastLon = WrapAdd(this->lastLon, DecodeZigzag(stream));
-	this->lastLat = WrapAdd(this->lastLat, DecodeZigzag(stream));
+	//Node coordinates are delta coded in 32 bits; see WrapAdd32
+	this->lastLon = WrapAdd32(this->lastLon, DecodeZigzag(stream));
+	this->lastLat = WrapAdd32(this->lastLat, DecodeZigzag(stream));
 	node.lon = this->lastLon / 1e7;
 	node.lat = this->lastLat / 1e7;
 
@@ -394,19 +426,20 @@ void O5mDecode::DecodeRelation()
 
 // ************** o5m encoder ****************
 
-O5mEncode::O5mEncode(std::shared_ptr<ByteSink> sinkIn) :
+O5mEncode::O5mEncode(std::shared_ptr<ByteSink> sinkIn, const TagMap &customAttribsIn) :
 	OsmEncoder(sinkIn),
 	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
 	runningRefOffset(0),
-	writtenHeader(false)
+	writtenHeader(false),
+	customAttribs(customAttribsIn)
 {
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
 	this->ResetDeltaCoding();
 }
 
-O5mEncode::O5mEncode(std::streambuf &output) :
-	O5mEncode(std::make_shared<StreamSink>(output))
+O5mEncode::O5mEncode(std::streambuf &output, const TagMap &customAttribsIn) :
+	O5mEncode(std::make_shared<StreamSink>(output), customAttribsIn)
 {
 
 }
@@ -421,6 +454,25 @@ void O5mEncode::WriteStart(bool isDiff)
 
 	this->writtenHeader = true;
 	this->ResetDeltaCoding();
+
+	//Document attributes, in this library's own dataset. Like the bounding
+	//box it comes before any object.
+	std::string attribData;
+	for(TagMap::const_iterator it=customAttribs.begin(); it!=customAttribs.end(); it++)
+	{
+		if(it->first == "version" || it->first == "generator" || it->second.empty())
+			continue;
+		if(it->first.empty() || it->first.find('\0') != std::string::npos ||
+			it->second.find('\0') != std::string::npos)
+			throw std::invalid_argument("o5m attribute names and values cannot be empty or contain a zero byte");
+		attribData.append(it->first);
+		attribData.push_back('\0');
+		attribData.append(it->second);
+		attribData.push_back('\0');
+	}
+	if(!attribData.empty())
+		this->WriteBlock((char)O5M_ATTRIBS,
+			std::string(O5M_ATTRIBS_MARKER, sizeof(O5M_ATTRIBS_MARKER)) + attribData);
 }
 
 void O5mEncode::WriteBlock(char code, const std::string &data)
@@ -556,11 +608,12 @@ void O5mEncode::StoreNode(const OsmNode &node)
 	std::string data;
 	this->EncodeObjectStart(node, data);
 
-	int64_t lon = RoundCoord(node.lon * 1e7);
-	AppendZigzag(WrapSub(lon, this->lastLon), data);
+	//Node coordinates are delta coded in 32 bits, as other o5m programs do
+	int64_t lon = RoundCoord32(node.lon);
+	AppendZigzag(WrapSub32(lon, this->lastLon), data);
 	this->lastLon = lon;
-	int64_t lat = RoundCoord(node.lat * 1e7);
-	AppendZigzag(WrapSub(lat, this->lastLat), data);
+	int64_t lat = RoundCoord32(node.lat);
+	AppendZigzag(WrapSub32(lat, this->lastLat), data);
 	this->lastLat = lat;
 
 	this->EncodeTags(node.tags, data);
