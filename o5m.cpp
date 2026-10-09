@@ -33,6 +33,11 @@ static void ReadExactLength(std::istream &str, char *out, size_t len)
 	}
 }
 
+static bool AtEnd(std::istream &stream)
+{
+	return stream.peek() == std::char_traits<char>::eof();
+}
+
 // ****** o5m decoder ******
 
 O5mDecode::O5mDecode(std::streambuf &input, IDataStreamHandler &output) :
@@ -280,14 +285,18 @@ void O5mDecode::DecodeObjectStart(std::istream &stream, OsmObject &obj)
 	this->lastObjId = WrapAdd(this->lastObjId, DecodeZigzag(stream));
 	obj.objId = this->lastObjId;
 
+	//A dataset may be cut short at any point from here on: the format lets a
+	//writer leave out the author, the version, and everything after them
 	MetaData &out = obj.metaData;
 	out = MetaData();
+	if(AtEnd(stream))
+		return;
 	out.version = DecodeVarint(stream);
-	if(out.version != 0)
+	if(out.version != 0 && !AtEnd(stream))
 	{
 		this->lastTimeStamp = WrapAdd(this->lastTimeStamp, DecodeZigzag(stream));
 		out.timestamp = this->lastTimeStamp;
-		if(out.timestamp != 0)
+		if(out.timestamp != 0 && !AtEnd(stream))
 		{
 			this->lastChangeSet = WrapAdd(this->lastChangeSet, DecodeZigzag(stream));
 			out.changeset = this->lastChangeSet;
@@ -319,6 +328,18 @@ void O5mDecode::DecodeNode()
 
 	this->DecodeObjectStart(stream, node);
 
+	if(AtEnd(stream))
+	{
+		//Nothing but the ID and perhaps version and author: this is how the
+		//format says "delete this object". The delta state is left alone.
+		node.metaData.visible = false;
+		node.lon = 0.0;
+		node.lat = 0.0;
+		node.tags.clear();
+		this->output.StoreNode(node);
+		return;
+	}
+
 	//Node coordinates are delta coded in 32 bits; see WrapAdd32
 	this->lastLon = WrapAdd32(this->lastLon, DecodeZigzag(stream));
 	this->lastLat = WrapAdd32(this->lastLat, DecodeZigzag(stream));
@@ -336,6 +357,16 @@ void O5mDecode::DecodeWay()
 	OsmWay &way = this->tmpWay;
 
 	this->DecodeObjectStart(stream, way);
+
+	if(AtEnd(stream))
+	{
+		//Cut down to its ID: a delete, as for nodes
+		way.metaData.visible = false;
+		way.refs.clear();
+		way.tags.clear();
+		this->output.StoreWay(way);
+		return;
+	}
 
 	uint64_t refLen = DecodeVarint(stream);
 	if(refLen > this->tmpBuff.size())
@@ -363,6 +394,16 @@ void O5mDecode::DecodeRelation()
 	OsmRelation &relation = this->tmpRelation;
 
 	this->DecodeObjectStart(stream, relation);
+
+	if(AtEnd(stream))
+	{
+		//Cut down to its ID: a delete, as for nodes
+		relation.metaData.visible = false;
+		relation.members.clear();
+		relation.tags.clear();
+		this->output.StoreRelation(relation);
+		return;
+	}
 
 	uint64_t refLen = DecodeVarint(stream);
 	if(refLen > this->tmpBuff.size())
@@ -607,6 +648,12 @@ void O5mEncode::StoreNode(const OsmNode &node)
 
 	std::string data;
 	this->EncodeObjectStart(node, data);
+	if(!node.metaData.visible)
+	{
+		//A deleted object is written as its ID and metadata alone
+		this->WriteBlock((char)O5M_NODE, data);
+		return;
+	}
 
 	//Node coordinates are delta coded in 32 bits, as other o5m programs do
 	int64_t lon = RoundCoord32(node.lon);
@@ -627,6 +674,11 @@ void O5mEncode::StoreWay(const OsmWay &way)
 
 	std::string data;
 	this->EncodeObjectStart(way, data);
+	if(!way.metaData.visible)
+	{
+		this->WriteBlock((char)O5M_WAY, data);
+		return;
+	}
 
 	std::string encRefs;
 	for(size_t i=0; i<way.refs.size(); i++)
@@ -648,6 +700,11 @@ void O5mEncode::StoreRelation(const OsmRelation &relation)
 
 	std::string data;
 	this->EncodeObjectStart(relation, data);
+	if(!relation.metaData.visible)
+	{
+		this->WriteBlock((char)O5M_RELATION, data);
+		return;
+	}
 
 	std::string encRefs;
 	for(size_t i=0; i<relation.members.size(); i++)

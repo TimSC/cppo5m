@@ -11,7 +11,7 @@
 int64_t ParseOsmTimestamp(const char *text);
 
 ///Appends a timestamp as, for example, 2020-01-02T03:04:05Z. Returns false,
-///appending nothing, if the value cannot be represented as a calendar date.
+///appending nothing, if the value is not a date with a four digit year.
 bool AppendOsmTimestamp(int64_t timestamp, std::string &out);
 
 #endif //CPPO5M_OSMTIME_H

@@ -649,6 +649,24 @@ static void TestHostileInput()
 	late.nodes.push_back(lateNode);
 	CHECK(Throws<range_error>([&]{ Encode(OsmFormat::Pbf, late); }));
 
+	//Timestamps outside the years text can hold are left out of XML and JSON,
+	//so the document still reads back; o5m keeps the number
+	OsmData ancient;
+	OsmNode old = Node(1, 1, 2);
+	old.metaData.timestamp = -229000000000LL; //Around the year -5287
+	ancient.nodes.push_back(old);
+	OsmNode distant = Node(2, 1, 2);
+	distant.metaData.timestamp = 400000000000LL; //Around the year 14645
+	ancient.nodes.push_back(distant);
+	CHECK(Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, ancient)) == ancient);
+	for(OsmFormat format : {OsmFormat::OsmXml, OsmFormat::OsmJson})
+	{
+		string text = Encode(format, ancient);
+		CHECK(text.find("timestamp") == string::npos);
+		OsmData readBack2 = Decode(format, text);
+		CHECK(readBack2.nodes.size() == 2 && readBack2.nodes[0].metaData.timestamp == 0);
+	}
+
 	//Root attribute names are checked
 	auto sink = make_shared<StringSink>();
 	OsmXmlEncode badName(sink, TagMap{{"not a name", "x"}});
@@ -1174,6 +1192,113 @@ static void TestO5mLongitudeWrap()
 	CHECK(Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, outside)) == outside);
 }
 
+static void TestO5mDeletes()
+{
+	//o5m marks a deleted object by cutting its dataset down to the ID, with or
+	//without version and author. Live objects around it must be unaffected.
+	OsmData data;
+	data.isDiff = true;
+	OsmNode before = Node(10, 50.5, -1.5);
+	before.tags["name"] = "kept";
+	OsmNode gone = Node(11, 51.5, -2.5);
+	gone.metaData = Meta(3, 1600000000, 77, 5, "deleter");
+	gone.metaData.visible = false;
+	gone.tags["name"] = "dropped";
+	OsmNode after = Node(12, 50.6, -1.6);
+	after.tags["name"] = "kept";
+	data.nodes = {before, gone, after};
+
+	OsmWay liveWay;
+	liveWay.objId = 20;
+	liveWay.metaData = Meta(1, 1600000001, 78, 5, "deleter");
+	liveWay.refs = {10, 12};
+	OsmWay goneWay = liveWay;
+	goneWay.objId = 21;
+	goneWay.metaData.version = 2;
+	goneWay.metaData.visible = false;
+	OsmWay laterWay = liveWay;
+	laterWay.objId = 22;
+	laterWay.refs = {12, 10};
+	data.ways = {liveWay, goneWay, laterWay};
+
+	OsmRelation liveRel;
+	liveRel.objId = 30;
+	liveRel.metaData = Meta(1, 1600000002, 79, 5, "deleter");
+	liveRel.members.push_back(RelationMember(ObjectType::Way, 20, "outer"));
+	OsmRelation goneRel = liveRel;
+	goneRel.objId = 31;
+	goneRel.metaData.visible = false;
+	OsmRelation laterRel = liveRel;
+	laterRel.objId = 32;
+	laterRel.members.push_back(RelationMember(ObjectType::Node, 10, ""));
+	data.relations = {liveRel, goneRel, laterRel};
+
+	//What should come back: deleted objects keep their identity and metadata only
+	OsmData expected = data;
+	expected.nodes[1].lat = 0.0;
+	expected.nodes[1].lon = 0.0;
+	expected.nodes[1].tags.clear();
+	expected.ways[1].refs.clear();
+	expected.relations[1].members.clear();
+
+	string encoded = Encode(OsmFormat::O5m, data);
+	OsmData decoded = Decode(OsmFormat::O5m, encoded);
+	CHECK(Equivalent(decoded, expected));
+	CHECK(decoded.isDiff);
+	CHECK(!decoded.nodes[1].metaData.visible && decoded.nodes[0].metaData.visible && decoded.nodes[2].metaData.visible);
+	CHECK(!decoded.ways[1].metaData.visible && !decoded.relations[1].metaData.visible);
+	CHECK(decoded.nodes[1].metaData == gone.metaData);
+	//Writing it again gives the same bytes
+	CHECK(Encode(OsmFormat::O5m, decoded) == encoded);
+	//In a plain o5m file too
+	data.isDiff = false;
+	expected.isDiff = false;
+	CHECK(Equivalent(Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, data)), expected));
+
+	//A change file as osmconvert writes it: delete node 5 version 3, delete
+	//way 6 version 2, then node 7 version 2 at lon 2 lat 1
+	const string change("\xff\xe0\x04o5c2\xff\x10\x03\x0a\x03\x00\xff\x11\x03\x0c\x02\x00"
+		"\xff\x10\x0b\x0e\x02\x00\x80\xb4\x89\x13\x80\xda\xc4\x09\xfe", 34);
+	OsmData fromChange = Decode(OsmFormat::O5m, change);
+	CHECK(fromChange.isDiff && fromChange.nodes.size() == 2 && fromChange.ways.size() == 1);
+	if(fromChange.nodes.size() == 2 && fromChange.ways.size() == 1)
+	{
+		CHECK(fromChange.nodes[0].objId == 5 && fromChange.nodes[0].metaData.version == 3);
+		CHECK(!fromChange.nodes[0].metaData.visible);
+		CHECK(fromChange.ways[0].objId == 6 && fromChange.ways[0].metaData.version == 2);
+		CHECK(!fromChange.ways[0].metaData.visible && fromChange.ways[0].refs.empty());
+		CHECK(fromChange.nodes[1].objId == 7 && fromChange.nodes[1].metaData.visible);
+		CHECK(fromChange.nodes[1].lon == 2.0 && fromChange.nodes[1].lat == 1.0);
+	}
+
+	//Cut down further still: the ID alone, and the ID with a version but no timestamp
+	string header("\xff\xe0\x04o5c2", 7);
+	OsmData idOnly = Decode(OsmFormat::O5m, header + string("\x10\x01\x0a", 3) + string("\x12\x02\x0c\x04", 4) + "\xfe");
+	CHECK(idOnly.nodes.size() == 1 && idOnly.relations.size() == 1);
+	if(idOnly.nodes.size() == 1 && idOnly.relations.size() == 1)
+	{
+		CHECK(idOnly.nodes[0].objId == 5 && !idOnly.nodes[0].metaData.visible && idOnly.nodes[0].metaData.version == 0);
+		//The relation ID is a delta from the node's, in the same counter
+		CHECK(idOnly.relations[0].objId == 11 && idOnly.relations[0].metaData.version == 4);
+		CHECK(!idOnly.relations[0].metaData.visible);
+	}
+
+	//A way with no nodes is not a delete: it still has its (empty) node list
+	OsmData hollow;
+	OsmWay empty;
+	empty.objId = 1;
+	hollow.ways.push_back(empty);
+	OsmData hollowBack = Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, hollow));
+	CHECK(hollowBack.ways.size() == 1 && hollowBack.ways[0].metaData.visible);
+
+	//A node with a longitude but no latitude is damage, not a delete
+	CHECK(Throws<OsmDecodeError>([&]{ Decode(OsmFormat::O5m, header + string("\x10\x03\x0a\x00\x02", 5) + "\xfe"); }));
+
+	//Deletes survive conversion to and from XML
+	OsmData viaXml = Decode(OsmFormat::OsmXml, Encode(OsmFormat::OsmXml, decoded));
+	CHECK(Equivalent(Decode(OsmFormat::O5m, Encode(OsmFormat::O5m, viaXml)), decoded));
+}
+
 static void TestAttributes()
 {
 	//Attributes of the document itself: written by o5m, XML and JSON, and read back
@@ -1536,6 +1661,7 @@ int main()
 		{"json", TestJson},
 		{"json decode", TestJsonDecode},
 		{"o5m longitude wrap", TestO5mLongitudeWrap},
+		{"o5m deletes", TestO5mDeletes},
 		{"attributes", TestAttributes},
 		{"xml limits", TestXmlLimits},
 		{"osmchange", TestOsmChange},

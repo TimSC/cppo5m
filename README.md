@@ -127,3 +127,4 @@ A conversion tool modelled after osmconvert, mainly useful for testing. The form
 * Coordinates must be finite numbers; the XML decoder and the o5m and PBF encoders refuse anything else.
 * The PBF encoder does not write the visible flag unless `encodeHistorical` is set.
 * In o5m an object with version zero has no room for its timestamp, changeset or user.
+* o5m marks a deleted object by storing only its ID and metadata. The decoder reports such an object with `visible` false, and the encoder writes any object with `visible` false that way, so a deleted object's position, tags and members are not kept in o5m.

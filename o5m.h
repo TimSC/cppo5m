@@ -13,6 +13,10 @@
 #include "model.h"
 
 ///Decodes an o5m or o5c stream.
+///
+///The format marks a deleted object by writing nothing but its ID, optionally
+///with version and author. Such an object is passed on with visible set to
+///false, no position, no tags and no members.
 class O5mDecode : public OsmDecoder
 {
 private:
@@ -66,6 +70,10 @@ public:
 };
 
 ///Encodes a stream of map objects as o5m, or o5c if StoreIsDiff(true) comes first.
+///
+///An object with visible set to false is written as a delete: its ID and
+///metadata only. The format has no other way to mark an object deleted, so its
+///position, tags and members are not stored.
 ///
 ///o5m has no standard place for attributes of the document as a whole. Any
 ///given to the constructor are written in a dataset of this library's own
