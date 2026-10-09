@@ -68,8 +68,7 @@ template <class T> void FixedDeque<T>::SetBufferSize(size_t si)
 		while (this->frontCursor != this->backCursor)
 		{
 			tmp[count] = this->buffer[this->frontCursor];
-			T empty;
-			this->buffer[this->frontCursor] = empty; //Clear old data
+			this->buffer[this->frontCursor] = T(); //Clear old data
 			this->frontCursor = WrapAround(this->frontCursor+1, this->buffer.size());
 			count ++;
 		}
@@ -145,8 +144,7 @@ template <class T> T FixedDeque<T>::PopFront()
 	if(this->Size() == 0)
 		throw std::runtime_error("deque underflow");
 	T obj = this->buffer[this->frontCursor];
-	T empty;
-	this->buffer[this->frontCursor] = empty; //Clear old data
+	this->buffer[this->frontCursor] = T(); //Clear old data
 	this->frontCursor = WrapAround(this->frontCursor+1, this->buffer.size());
 	return obj;
 }
@@ -157,8 +155,7 @@ template <class T> T FixedDeque<T>::PopBack()
 		throw std::runtime_error("deque underflow");
 	this->backCursor = WrapAround(this->backCursor-1, this->buffer.size());
 	T obj = this->buffer[this->backCursor];
-	T empty;
-	this->buffer[this->backCursor] = empty; //Clear old data
+	this->buffer[this->backCursor] = T(); //Clear old data
 	return obj;
 }
 
@@ -167,8 +164,7 @@ template <class T> void FixedDeque<T>::Clear()
 	while (this->frontCursor != this->backCursor)
 	{
 		//Pop everything
-		T empty;
-		this->buffer[this->frontCursor] = empty; //Clear old data
+		this->buffer[this->frontCursor] = T(); //Clear old data
 		this->frontCursor = WrapAround(this->frontCursor+1, this->buffer.size());
 	}
 	this->frontCursor = 0;

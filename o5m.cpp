@@ -1,96 +1,50 @@
-
-#include <assert.h>
-#include <stdexcept>
-#include <iostream>
-#include <stdlib.h>
+#include <cassert>
 #include <cmath>
-#include "varint.h"
+#include <cstdlib>
+#include <sstream>
+#include <stdexcept>
 #include "o5m.h"
-#include <iostream>
+#include "intmath.h"
+#include "varint.h"
 using namespace std;
 
-// ****** o5m utilities ******
+static const unsigned char O5M_NODE = 0x10;
+static const unsigned char O5M_WAY = 0x11;
+static const unsigned char O5M_RELATION = 0x12;
+static const unsigned char O5M_BBOX = 0xdb;
+static const unsigned char O5M_HEADER = 0xe0;
+static const unsigned char O5M_EOF = 0xfe;
+static const unsigned char O5M_RESET = 0xff;
 
-void TestDecodeNumber()
-{
-	assert (DecodeVarint("\x05") == 5);
-	assert (DecodeVarint("\x7f") == 127);
-	assert (DecodeVarint("\xc3\x02") == 323);
-	assert (DecodeVarint("\x80\x80\x01") == 16384);
-	assert (DecodeZigzag("\x08") == 4);
-	assert (DecodeZigzag("\x80\x01") == 64);
-	assert (DecodeZigzag("\x03") == -2);
-	assert (DecodeZigzag("\x05") == -3);
-	assert (DecodeZigzag("\x81\x01") == -65);
-}
-
-void TestEncodeNumber()
-{
-	assert (EncodeVarint(5) == "\x05");
-	assert (EncodeVarint(127) == "\x7f");
-	assert (EncodeVarint(323) == "\xc3\x02");
-	assert (EncodeVarint(16384) == "\x80\x80\x01");
-	assert (EncodeZigzag(4) == "\x08");
-	assert (EncodeZigzag(64) == "\x80\x01");
-	assert (EncodeZigzag(-2) == "\x03");
-	assert (EncodeZigzag(-3) == "\x05");
-	assert (EncodeZigzag(-65) == "\x81\x01");
-}
-
-void ReadExactLength(std::istream &str, char *out, size_t len)
+static void ReadExactLength(std::istream &str, char *out, size_t len)
 {
 	size_t total = 0;
 	while(total < len)
 	{
 		str.read(&out[total], len-total);
 		total += str.gcount();
-		//std::cout << "Read " << total << " of " << len << std::endl;
-		if(str.fail())
-			throw std::runtime_error("Input underflow");
+		if(str.fail() && total < len)
+			throw OsmDecodeError("o5m input ends part way through an object");
 	}
 }
 
 // ****** o5m decoder ******
 
-O5mDecode::O5mDecode(std::streambuf &handleIn) : 
-	OsmDecoder(),
-	handle(&handleIn),
+O5mDecode::O5mDecode(std::streambuf &input, IDataStreamHandler &output) :
+	OsmDecoder(output),
+	handle(&input),
+	headerRead(false),
 	refTableLengthThreshold(250),
-	refTableMaxSize(15000)
+	refTableMaxSize(15000),
+	maxObjectBytes(256 * 1024 * 1024)
 {
-	finished = false;
-	stopProcessing = false;
-
-	if(handle.fail())
-		throw std::runtime_error("Stream handle indicating failure in o5m decode");
-
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
-	char tmp = handle.get();
-	if(handle.fail())
-		throw std::runtime_error("Error reading buffer to get o5m magic number");
-	std::string tmp2(&tmp, 1);
-	if(tmp2 != "\xff")
-		throw std::runtime_error("First byte has wrong value");
-
-	tmp = handle.get();
-	if(handle.fail())
-		throw std::runtime_error("Error reading buffer to get o5m header");
-	std::string tmp3(&tmp, 1);
-	if(tmp3 != "\xe0")
-		throw std::runtime_error("Missing o5m header");
-
 	this->ResetDeltaCoding();
-}
-
-O5mDecode::~O5mDecode()
-{
-	if(!this->finished)
-		this->DecodeFinish();
 }
 
 void O5mDecode::ResetDeltaCoding()
 {
-	this->lastObjId = 0; //Used in delta encoding
+	this->lastObjId = 0;
 	this->lastTimeStamp = 0;
 	this->lastChangeSet = 0;
 	this->stringPairs.Clear();
@@ -103,111 +57,141 @@ void O5mDecode::ResetDeltaCoding()
 
 bool O5mDecode::DecodeNext()
 {
-	if(finished)
-		throw runtime_error("Decode already finished");
-
-	unsigned char code = this->handle.get();
-	if(this->handle.fail())
-		throw std::runtime_error("Error reading type code");
-
-	//std::cout << "found code " << (unsigned int)code << std::endl;
-	switch(code)
-	{
-	case 0x10:
-		this->DecodeNode();
-		return !stopProcessing;
-		break;
-	case 0x11:
-		this->DecodeWay();
-		return !stopProcessing;
-		break;
-	case 0x12:
-		this->DecodeRelation();
-		return !stopProcessing;
-		break;
-	case 0xdb:
-		this->DecodeBoundingBox();
-		return !stopProcessing;
-		break;
-	case 0xee: //Sync code
-		if (this->output != NULL)
-			stopProcessing |= this->output->Sync();
-		break;
-	case 0xff: //Reset code
-		//Used in delta encoding information
-		this->ResetDeltaCoding();
-		if (this->output != NULL)
-			stopProcessing |= this->output->Reset();
-		return !stopProcessing; 
-		break;
-	case 0xfe:
-		return !stopProcessing; //End of file
-		break;
-	}
-	if(code >= 0xF0 && code <= 0xFF)
+	if(this->finished)
 		return false;
 
-	//Default behavior to skip unknown data
-	uint64_t length = DecodeVarint(this->handle);
-	tmpBuff.resize(length);
-	ReadExactLength(this->handle, &tmpBuff[0], length);
-	return !stopProcessing;
+	bool more = true;
+	try
+	{
+		if(!this->headerRead)
+		{
+			this->ReadHeader();
+			return true;
+		}
+		more = this->DecodeBlock();
+	}
+	catch(const OsmDecodeError &)
+	{
+		throw;
+	}
+	catch(const std::bad_alloc &)
+	{
+		throw;
+	}
+	catch(const std::runtime_error &err)
+	{
+		//Low level read failures; handler exceptions never pass through here
+		throw OsmDecodeError(std::string("o5m decode failed: ") + err.what());
+	}
+
+	//Pending objects are handed over outside the try block, so exceptions
+	//thrown by the handler reach the caller unchanged.
+	if(!more)
+	{
+		this->MarkFinished();
+		return false;
+	}
+	return true;
 }
 
-void O5mDecode::DecodeHeader()
+void O5mDecode::ReadHeader()
 {
-	if(finished)
-		throw runtime_error("Decode already finished");
+	int first = this->handle.get();
+	if(first == std::char_traits<char>::eof())
+		throw OsmDecodeError("o5m input is empty");
+	if((unsigned char)first != O5M_RESET)
+		throw OsmDecodeError("o5m input does not start with a reset byte");
+	int second = this->handle.get();
+	if(second == std::char_traits<char>::eof() || (unsigned char)second != O5M_HEADER)
+		throw OsmDecodeError("o5m header is missing");
 
-	uint64_t length = DecodeVarint(this->handle);
 	std::string fileType;
-	fileType.resize(length);
-	ReadExactLength(this->handle, &fileType[0], length);
-	if(this->output != NULL)
-		stopProcessing |= this->output->StoreIsDiff("o5c2"==fileType);
+	this->ReadBlock(fileType);
+	if(fileType != "o5m2" && fileType != "o5c2")
+		throw OsmDecodeError("o5m header has an unknown file type");
+	this->headerRead = true;
+	this->output.StoreIsDiff(fileType == "o5c2");
 }
 
-void O5mDecode::DecodeBoundingBox()
+void O5mDecode::ReadBlock(std::string &out)
 {
-	DecodeVarint(this->handle); //Value discarded
+	uint64_t length = DecodeVarint(this->handle);
+	if(length > this->maxObjectBytes)
+		throw OsmDecodeError("o5m object is larger than the maximum allowed size");
+	out.resize(length);
+	if(length > 0)
+		ReadExactLength(this->handle, &out[0], length);
+}
 
-	//south-western corner 
-	double x1 = DecodeZigzag(this->handle) / 1e7; //lon
-	double y1 = DecodeZigzag(this->handle) / 1e7; //lat
+///Reads one block. Returns false at the end of the input.
+bool O5mDecode::DecodeBlock()
+{
+	int raw = this->handle.get();
+	if(raw == std::char_traits<char>::eof())
+		return false; //Tolerate a missing end marker
 
-	//north-eastern corner
-	double x2 = DecodeZigzag(this->handle) / 1e7; //lon
-	double y2 = DecodeZigzag(this->handle) / 1e7; //lat
+	unsigned char code = (unsigned char)raw;
+	switch(code)
+	{
+	case O5M_NODE:
+		this->DecodeNode();
+		return true;
+	case O5M_WAY:
+		this->DecodeWay();
+		return true;
+	case O5M_RELATION:
+		this->DecodeRelation();
+		return true;
+	case O5M_BBOX:
+		{
+			Bounds bounds;
+			this->DecodeBoundingBox(bounds);
+			this->output.StoreBounds(bounds);
+		}
+		return true;
+	case O5M_RESET:
+		this->ResetDeltaCoding();
+		this->output.Reset();
+		return true;
+	case O5M_EOF:
+		return false;
+	}
+	if(code >= 0xf0)
+		return true; //Other single byte codes carry no data
 
-	if(this->output != NULL)
-		stopProcessing |= this->output->StoreBounds(x1, y1, x2, y2);
+	//Skip anything else, which includes sync markers and repeated headers
+	this->ReadBlock(this->tmpBuff);
+	return true;
+}
+
+void O5mDecode::DecodeBoundingBox(Bounds &out)
+{
+	this->ReadBlock(this->tmpBuff);
+	std::istringstream stream(this->tmpBuff);
+
+	//South-western corner then north-eastern corner
+	out.minLon = DecodeZigzag(stream) / 1e7;
+	out.minLat = DecodeZigzag(stream) / 1e7;
+	out.maxLon = DecodeZigzag(stream) / 1e7;
+	out.maxLat = DecodeZigzag(stream) / 1e7;
 }
 
 void O5mDecode::DecodeSingleString(std::istream &stream, std::string &out)
 {
-	char tmp[] = "a";
-	out = "";
-	int code = 0x01;
-	while((char)code != 0x00)
+	out.clear();
+	while(true)
 	{
-		code = stream.get();
+		int code = stream.get();
 		if(code == std::char_traits<char>::eof())
-			throw std::runtime_error("End of file while reading string");
-		if(stream.fail())
-		{
-			throw std::runtime_error("Error reading string");
-		}
-		if ((char)code != 0x00)
-		{
-			tmp[0] = (char)code;
-			out.append(tmp, 1);
-		}
+			throw OsmDecodeError("o5m string is not terminated");
+		if(code == 0x00)
+			return;
+		out.push_back((char)code);
 	}
 }
 
 void O5mDecode::ConsiderAddToStringRefTable(const std::string &firstStr, const std::string &secondStr)
 {
-	//Consider adding pair to string reference table
 	if(firstStr.size() + secondStr.size() <= this->refTableLengthThreshold)
 	{
 		this->combinedRawTmpBuff = "";
@@ -223,28 +207,23 @@ void O5mDecode::AddBuffToStringRefTable(const std::string &buff)
 {
 	//Make sure it does not grow forever
 	if(this->stringPairs.AvailableSpace() == 0)
-	{
 		this->stringPairs.PopFront();
-	}
 
 	this->stringPairs.PushBack(buff);
 }
 
+///Reads a string pair, either inline or as a reference to an earlier one.
+///Returns false if the stream has no more data.
 bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std::string &secondStr)
 {
-	uint64_t ref = 0;
-	try {
-		ref = DecodeVarint(stream);
-	}
-	catch (std::runtime_error &err)
+	if(stream.peek() == std::char_traits<char>::eof())
 	{
-		if(stream.eof()) {
-			firstStr = "";
-			secondStr = "";
-			return false;
-		}
-		throw err;
+		firstStr.clear();
+		secondStr.clear();
+		return false;
 	}
+
+	uint64_t ref = DecodeVarint(stream);
 	if(ref == 0x00)
 	{
 		//Found new pair of strings
@@ -254,14 +233,9 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	}
 	else
 	{
-		int64_t offset = this->stringPairs.Size()-ref;
-		if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
-		{
-			stringstream ss;
-			ss << "o5m reference " << offset << " out of range (should be in range 0-"<< (this->stringPairs.Size()-1) << ")";
-			throw std::runtime_error(ss.str());
-		}
-		const std::string &prevPair = this->stringPairs[offset];
+		if(ref > this->stringPairs.Size())
+			throw OsmDecodeError("o5m string reference is out of range");
+		const std::string &prevPair = this->stringPairs[this->stringPairs.Size()-ref];
 		std::istringstream ss(prevPair);
 		this->DecodeSingleString(ss, firstStr);
 		this->DecodeSingleString(ss, secondStr);
@@ -269,271 +243,194 @@ bool O5mDecode::ReadStringPair(std::istream &stream, std::string &firstStr, std:
 	return true;
 }
 
-void O5mDecode::DecodeMetaData(std::istream &nodeDataStream, class MetaData &out)
+///Decodes the ID and metadata that start every object.
+void O5mDecode::DecodeObjectStart(std::istream &stream, OsmObject &obj)
 {
-	//Decode author and time stamp
-	out.version = DecodeVarint(nodeDataStream);
-	out.timestamp = 0;
-	out.changeset = 0;
-	out.uid = 0;
-	std::string uidStr;
-	out.username="";
+	this->lastObjId = WrapAdd(this->lastObjId, DecodeZigzag(stream));
+	obj.objId = this->lastObjId;
+
+	MetaData &out = obj.metaData;
+	out = MetaData();
+	out.version = DecodeVarint(stream);
 	if(out.version != 0)
 	{
-		int64_t deltaTime = DecodeZigzag(nodeDataStream);
-		this->lastTimeStamp += deltaTime;
+		this->lastTimeStamp = WrapAdd(this->lastTimeStamp, DecodeZigzag(stream));
 		out.timestamp = this->lastTimeStamp;
-		//print "timestamp", self.lastTimeStamp, deltaTime
 		if(out.timestamp != 0)
 		{
-			int64_t deltaChangeSet = DecodeZigzag(nodeDataStream);
-			this->lastChangeSet += deltaChangeSet;
+			this->lastChangeSet = WrapAdd(this->lastChangeSet, DecodeZigzag(stream));
 			out.changeset = this->lastChangeSet;
-			//print "changeset", self.lastChangeSet, deltaChangeSet
 
-			this->ReadStringPair(nodeDataStream, uidStr, out.username);
-			if (uidStr.size() > 0)
-				out.uid = DecodeVarint(uidStr.c_str());
+			std::string uidStr;
+			this->ReadStringPair(stream, uidStr, out.username);
+			if(uidStr.size() > 0)
+			{
+				std::istringstream uidStream(uidStr);
+				out.uid = DecodeVarint(uidStream);
+			}
 		}
 	}
+}
+
+void O5mDecode::DecodeTags(std::istream &stream, TagMap &out)
+{
+	out.clear();
+	std::string firstString, secondString;
+	while(this->ReadStringPair(stream, firstString, secondString))
+		out[firstString] = secondString;
 }
 
 void O5mDecode::DecodeNode()
 {
-	uint64_t length = DecodeVarint(this->handle);
-	std::string &nodeData = tmpBuff;
-	nodeData.resize(length);
-	ReadExactLength(this->handle, &nodeData[0], length);
+	this->ReadBlock(this->tmpBuff);
+	std::istringstream stream(this->tmpBuff);
+	OsmNode &node = this->tmpNode;
 
-	//Decode object ID
-	std::istringstream nodeDataStream(nodeData);
-	int64_t deltaId = DecodeZigzag(nodeDataStream);
-	this->lastObjId += deltaId;
-	int64_t objectId = this->lastObjId; 
+	this->DecodeObjectStart(stream, node);
 
-	this->DecodeMetaData(nodeDataStream, this->tmpMetaData);
+	this->lastLon = WrapAdd(this->lastLon, DecodeZigzag(stream));
+	this->lastLat = WrapAdd(this->lastLat, DecodeZigzag(stream));
+	node.lon = this->lastLon / 1e7;
+	node.lat = this->lastLat / 1e7;
 
-	this->lastLon += DecodeZigzag(nodeDataStream);
-	this->lastLat += DecodeZigzag(nodeDataStream);
-	double lon = this->lastLon / 1e7;
-	double lat = this->lastLat / 1e7;
-
-	//Extract tags
-	std::string firstString, secondString;
-	this->tmpTagsBuff.clear();
-	while(!nodeDataStream.eof())
-	{
-		bool ok = this->ReadStringPair(nodeDataStream, firstString, secondString);
-		if(ok) this->tmpTagsBuff[firstString] = secondString;
-	}
-
-	if(this->output != NULL)
-		stopProcessing |= this->output->StoreNode(objectId, this->tmpMetaData, this->tmpTagsBuff, lat, lon);
+	this->DecodeTags(stream, node.tags);
+	this->output.StoreNode(node);
 }
 
 void O5mDecode::DecodeWay()
 {
-	uint64_t length = DecodeVarint(this->handle);
-	std::string &objData = tmpBuff;
-	objData.resize(length);
-	ReadExactLength(this->handle, &objData[0], length);
+	this->ReadBlock(this->tmpBuff);
+	std::istringstream stream(this->tmpBuff);
+	OsmWay &way = this->tmpWay;
 
-	//Decode object ID
-	std::istringstream objDataStream(objData);
-	int64_t deltaId = DecodeZigzag(objDataStream);
-	this->lastObjId += deltaId;
-	int64_t objectId = this->lastObjId;
-	//print "objectId", objectId
+	this->DecodeObjectStart(stream, way);
 
-	this->DecodeMetaData(objDataStream, this->tmpMetaData);
+	uint64_t refLen = DecodeVarint(stream);
+	if(refLen > this->tmpBuff.size())
+		throw OsmDecodeError("o5m way reference section is longer than the way");
+	std::string refData(refLen, '\0');
+	if(refLen > 0)
+		ReadExactLength(stream, &refData[0], refLen);
+	std::istringstream refStream(refData);
 
-	uint64_t refLen = DecodeVarint(objDataStream);
-	//print "len ref", refLen
-
-	std::string refData;
-	refData.resize(refLen);
-	objDataStream.read(&refData[0], refLen);
-	std::istringstream refDataStream(refData);
-	this->tmpRefsBuff.clear();
-	while(!refDataStream.eof())
+	way.refs.clear();
+	while(refStream.peek() != std::char_traits<char>::eof())
 	{
-		try {
-			this->lastRefNode += DecodeZigzag(refDataStream);
-		}
-		catch (std::runtime_error &err)
-		{
-			if(refDataStream.eof())
-				continue;
-			throw err;
-		}
-		this->tmpRefsBuff.push_back(this->lastRefNode);
+		this->lastRefNode = WrapAdd(this->lastRefNode, DecodeZigzag(refStream));
+		way.refs.push_back(this->lastRefNode);
 	}
 
-	//Extract tags
-	std::string firstString, secondString;
-	this->tmpTagsBuff.clear();
-	while(!objDataStream.eof())
-	{
-		bool ok = this->ReadStringPair(objDataStream, firstString, secondString);
-		if(ok) this->tmpTagsBuff[firstString] = secondString;
-	}
-
-	if (this->output != NULL)
-		stopProcessing |= this->output->StoreWay(objectId, this->tmpMetaData, this->tmpTagsBuff, this->tmpRefsBuff);
+	this->DecodeTags(stream, way.tags);
+	this->output.StoreWay(way);
 }
 
 void O5mDecode::DecodeRelation()
 {
-	uint64_t length = DecodeVarint(this->handle);
-	std::string &objData = tmpBuff;
-	objData.resize(length);
-	ReadExactLength(this->handle, &objData[0], length);
+	this->ReadBlock(this->tmpBuff);
+	std::istringstream stream(this->tmpBuff);
+	OsmRelation &relation = this->tmpRelation;
 
-	//Decode object ID
-	std::istringstream objDataStream(objData);
-	int64_t deltaId = DecodeZigzag(objDataStream);
-	this->lastObjId += deltaId;
-	int64_t objectId = this->lastObjId;
-	//print "objectId", objectId
+	this->DecodeObjectStart(stream, relation);
 
-	this->DecodeMetaData(objDataStream, this->tmpMetaData);
+	uint64_t refLen = DecodeVarint(stream);
+	if(refLen > this->tmpBuff.size())
+		throw OsmDecodeError("o5m relation member section is longer than the relation");
+	std::string refData(refLen, '\0');
+	if(refLen > 0)
+		ReadExactLength(stream, &refData[0], refLen);
+	std::istringstream refStream(refData);
 
-	uint64_t refLen = DecodeVarint(objDataStream);
-	//print "len ref", refLen
-
-	std::string refData;
-	refData.resize(refLen);
-	objDataStream.read(&refData[0], refLen);
-	std::istringstream refDataStream(refData);
-
-	this->tmpRefsBuff.clear();
-	this->tmpRefRolesBuff.clear();
-	this->tmpRefTypeStrBuff.clear();
-
-	while (!refDataStream.eof())
+	relation.members.clear();
+	std::string typeAndRole;
+	while(refStream.peek() != std::char_traits<char>::eof())
 	{
-		int64_t deltaRef = 0;
-		try {
-			deltaRef += DecodeZigzag(refDataStream);
-		}
-		catch (std::runtime_error &err)
-		{
-			if(refDataStream.eof())
-				continue;
-			throw err;
-		}
+		int64_t deltaRef = DecodeZigzag(refStream);
 
-		uint64_t refIndex = DecodeVarint(refDataStream); //Index into reference table
-		std::string typeAndRole;
+		uint64_t refIndex = DecodeVarint(refStream); //Index into reference table
 		if(refIndex == 0)
 		{
-			this->DecodeSingleString(refDataStream, typeAndRole);
+			this->DecodeSingleString(refStream, typeAndRole);
 			if(typeAndRole.size() <= this->refTableLengthThreshold)
 				this->AddBuffToStringRefTable(typeAndRole);
 		}
 		else
 		{
-			int64_t offset = this->stringPairs.Size()-refIndex;
-			if(offset < 0 || offset >= (int64_t)this->stringPairs.Size())
-			{
-				stringstream ss;
-				ss << "o5m reference " << offset << " out of range (should be in range 0-"<< (this->stringPairs.Size()-1) << ")";
-				throw std::runtime_error(ss.str());
-			}
-			typeAndRole = this->stringPairs[offset];
+			if(refIndex > this->stringPairs.Size())
+				throw OsmDecodeError("o5m string reference is out of range");
+			typeAndRole = this->stringPairs[this->stringPairs.Size()-refIndex];
 		}
 
 		if(typeAndRole.size() < 1)
-			throw std::runtime_error("o5m relation member type/role string too short");
-		char typeCodeStr[] = "a";
-		typeCodeStr[0] = typeAndRole[0];
-		int typeCode = atoi(typeCodeStr);
-		std::string role(&typeAndRole[1], typeAndRole.size()-1);
-		int64_t refId = 0;
-		std::string typeStr;
-		switch(typeCode)
+			throw OsmDecodeError("o5m relation member has no type");
+
+		RelationMember member;
+		member.role.assign(typeAndRole, 1, std::string::npos);
+		switch(typeAndRole[0])
 		{
-		case 0:
-			this->lastRefNode += deltaRef;
-			refId = this->lastRefNode;
-			typeStr = "node";
+		case '0':
+			this->lastRefNode = WrapAdd(this->lastRefNode, deltaRef);
+			member.type = ObjectType::Node;
+			member.ref = this->lastRefNode;
 			break;
-		case 1:
-			this->lastRefWay += deltaRef;
-			refId = this->lastRefWay;
-			typeStr = "way";
+		case '1':
+			this->lastRefWay = WrapAdd(this->lastRefWay, deltaRef);
+			member.type = ObjectType::Way;
+			member.ref = this->lastRefWay;
 			break;
-		case 2:
-			this->lastRefRelation += deltaRef;
-			refId = this->lastRefRelation;
-			typeStr = "relation";
+		case '2':
+			this->lastRefRelation = WrapAdd(this->lastRefRelation, deltaRef);
+			member.type = ObjectType::Relation;
+			member.ref = this->lastRefRelation;
 			break;
 		default:
-			throw std::runtime_error("o5m relation member type code invalid");
+			throw OsmDecodeError("o5m relation member has an invalid type");
 		}
-
-		this->tmpRefsBuff.push_back(refId);
-		this->tmpRefRolesBuff.push_back(role);
-		this->tmpRefTypeStrBuff.push_back(typeStr);
+		relation.members.push_back(member);
 	}
 
-	//Extract tags
-	std::string firstString, secondString;
-	this->tmpTagsBuff.clear();
-	while(!objDataStream.eof())
-	{
-		bool ok = this->ReadStringPair(objDataStream, firstString, secondString);
-		if(ok) this->tmpTagsBuff[firstString] = secondString;
-	}
-
-	if(this->output != NULL)
-		stopProcessing |= this->output->StoreRelation(objectId, this->tmpMetaData, this->tmpTagsBuff, 
-			this->tmpRefTypeStrBuff, this->tmpRefsBuff, this->tmpRefRolesBuff);
-
-}
-
-void O5mDecode::DecodeFinish()
-{
-	if(finished)
-		throw runtime_error("Decode already finished");
-	if(this->output != nullptr)
-		this->output->Finish();
-	finished = true;
+	this->DecodeTags(stream, relation.tags);
+	this->output.StoreRelation(relation);
 }
 
 // ************** o5m encoder ****************
-O5mEncodeBase::O5mEncodeBase():	refTableLengthThreshold(250),
+
+O5mEncode::O5mEncode(std::shared_ptr<ByteSink> sinkIn) :
+	OsmEncoder(sinkIn),
+	refTableLengthThreshold(250),
 	refTableMaxSize(15000),
-	runningRefOffset(0)
-{
-	writtenHeader = false;
-}
-
-O5mEncodeBase::~O5mEncodeBase()
-{
-
-}
-
-void O5mEncodeBase::WriteStart(bool isDiff)
+	runningRefOffset(0),
+	writtenHeader(false)
 {
 	this->stringPairs.SetBufferSize(this->refTableMaxSize);
-	this->write("\xff", 1);
-
-	this->write("\xe0", 1);
-	std::string headerData;
-	if(isDiff)
-		headerData = "o5c2";
-	else
-		headerData = "o5m2";
-	std::string len = EncodeVarint(headerData.size());
-	*this << len;
-	*this << headerData;
-
-	writtenHeader = true;
 	this->ResetDeltaCoding();
 }
 
-void O5mEncodeBase::ResetDeltaCoding()
+O5mEncode::O5mEncode(std::streambuf &output) :
+	O5mEncode(std::make_shared<StreamSink>(output))
+{
+
+}
+
+void O5mEncode::WriteStart(bool isDiff)
+{
+	const char start[] = {(char)O5M_RESET, (char)O5M_HEADER};
+	this->Write(start, 2);
+	std::string headerData = isDiff ? "o5c2" : "o5m2";
+	this->Write(EncodeVarint(headerData.size()));
+	this->Write(headerData);
+
+	this->writtenHeader = true;
+	this->ResetDeltaCoding();
+}
+
+void O5mEncode::WriteBlock(char code, const std::string &data)
+{
+	this->Write(&code, 1);
+	this->Write(EncodeVarint(data.size()));
+	this->Write(data);
+}
+
+void O5mEncode::ResetDeltaCoding()
 {
 	this->lastObjId = 0;
 	this->lastTimeStamp = 0;
@@ -541,120 +438,108 @@ void O5mEncodeBase::ResetDeltaCoding()
 	this->stringPairs.Clear();
 	this->stringPairsDict.clear();
 	this->runningRefOffset = 0;
-	this->lastLat = 0.0;
-	this->lastLon = 0.0;
+	this->lastLat = 0;
+	this->lastLon = 0;
 	this->lastRefNode = 0;
 	this->lastRefWay = 0;
 	this->lastRefRelation = 0;
 }
 
-bool O5mEncodeBase::StoreIsDiff(bool isDiff)
+void O5mEncode::StoreIsDiff(bool isDiff)
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(isDiff);
-	return false;
 }
 
-bool O5mEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
+void O5mEncode::StoreBounds(const Bounds &bounds)
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
 
-	//south-western corner 
+	//South-western corner then north-eastern corner
 	std::string bboxData;
-	bboxData.append(EncodeZigzag(round(x1 * 1e7))); //lon
-	bboxData.append(EncodeZigzag(round(y1 * 1e7))); //lat
+	AppendZigzag(RoundCoord(bounds.minLon * 1e7), bboxData);
+	AppendZigzag(RoundCoord(bounds.minLat * 1e7), bboxData);
+	AppendZigzag(RoundCoord(bounds.maxLon * 1e7), bboxData);
+	AppendZigzag(RoundCoord(bounds.maxLat * 1e7), bboxData);
 
-	//north-eastern corner
-	bboxData.append(EncodeZigzag(round(x2 * 1e7))); //lon
-	bboxData.append(EncodeZigzag(round(y2 * 1e7))); //lat
-	
-	this->write("\xdb", 1);
-	std::string len = EncodeVarint(bboxData.size());
-	*this << len;
-	*this << bboxData;
-	return false;
+	this->WriteBlock((char)O5M_BBOX, bboxData);
 }
 
-void O5mEncodeBase::EncodeMetaData(const class MetaData &metaData, std::ostream &outStream)
+///Encodes the ID and metadata that start every object.
+void O5mEncode::EncodeObjectStart(const OsmObject &obj, std::string &out)
 {
-	//Decode author and time stamp
-	if(metaData.version != 0)
-	{
-		std::string verStr = EncodeVarint(metaData.version);
-		outStream << verStr;
-		int64_t deltaTime = metaData.timestamp - this->lastTimeStamp;
-		outStream << EncodeZigzag(deltaTime);
-		this->lastTimeStamp = metaData.timestamp;
-		//print "timestamp", self.lastTimeStamp, deltaTime
-		if(metaData.timestamp != 0)
-		{
-			//print changeset
-			int64_t deltaChangeSet = metaData.changeset - this->lastChangeSet;
-			outStream << EncodeZigzag(deltaChangeSet);
-			this->lastChangeSet = metaData.changeset;
-			if (metaData.uid != 0)
-			{
-				std::string encUid = EncodeVarint(metaData.uid);
-				this->WriteStringPair(encUid, metaData.username, outStream);
-			}
-			else
-			{
-				this->WriteStringPair("", metaData.username, outStream);
-			}
-		}
-	}
-	else
-	{
-		outStream << EncodeVarint(0);
-	}
+	AppendZigzag(WrapSub(obj.objId, this->lastObjId), out);
+	this->lastObjId = obj.objId;
+
+	const MetaData &metaData = obj.metaData;
+	AppendVarint(metaData.version, out);
+	if(metaData.version == 0)
+		return; //The format has nowhere to put the rest without a version
+
+	AppendZigzag(WrapSub(metaData.timestamp, this->lastTimeStamp), out);
+	this->lastTimeStamp = metaData.timestamp;
+	if(metaData.timestamp == 0)
+		return;
+
+	AppendZigzag(WrapSub(metaData.changeset, this->lastChangeSet), out);
+	this->lastChangeSet = metaData.changeset;
+	std::string encUid;
+	if(metaData.uid != 0)
+		encUid = EncodeVarint(metaData.uid);
+	this->WriteStringPair(encUid, metaData.username, out);
 }
 
-size_t O5mEncodeBase::FindStringPairsIndex(std::string needle, bool &indexFound)
+void O5mEncode::EncodeTags(const TagMap &tags, std::string &out)
 {
-	map<std::string, int>::iterator it = this->stringPairsDict.find(needle);
-	if (it == this->stringPairsDict.end())
-	{
-		indexFound = false;
-		return 0;
-	}
-	indexFound = true;
-	return this->runningRefOffset - it->second;
+	for(TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
+		this->WriteStringPair(it->first, it->second, out);
 }
 
-void O5mEncodeBase::WriteStringPair(const std::string &firstString, const std::string &secondString, 
-	std::ostream &tmpStream)
+bool O5mEncode::FindStringPairsIndex(const std::string &needle, size_t &indexOut)
 {
+	map<std::string, int64_t>::iterator it = this->stringPairsDict.find(needle);
+	if(it == this->stringPairsDict.end())
+		return false;
+	indexOut = this->runningRefOffset - it->second;
+	return true;
+}
+
+void O5mEncode::WriteStringPair(const std::string &firstString, const std::string &secondString,
+	std::string &out)
+{
+	if(firstString.find('\0') != std::string::npos || secondString.find('\0') != std::string::npos)
+		throw std::invalid_argument("o5m strings cannot contain a zero byte");
+
 	std::string encodedStrings = firstString;
-	encodedStrings.append("\x00",1);
+	encodedStrings.append("\x00", 1);
 	encodedStrings.append(secondString);
-	encodedStrings.append("\x00",1);
-	if(firstString.size() + secondString.size() <= this->refTableLengthThreshold)
+	encodedStrings.append("\x00", 1);
+	bool useTable = firstString.size() + secondString.size() <= this->refTableLengthThreshold;
+	if(useTable)
 	{
-		bool indexFound = false;
-		size_t existIndex = FindStringPairsIndex(encodedStrings, indexFound);
-		if(indexFound) {
-			tmpStream << EncodeVarint(existIndex);
+		size_t existIndex = 0;
+		if(this->FindStringPairsIndex(encodedStrings, existIndex))
+		{
+			AppendVarint(existIndex, out);
 			return;
 		}
 	}
 
-	tmpStream.write("\x00", 1);
-	tmpStream << encodedStrings;
-	if(firstString.size() + secondString.size() <= this->refTableLengthThreshold)
+	out.append("\x00", 1);
+	out.append(encodedStrings);
+	if(useTable)
 		this->AddToRefTable(encodedStrings);
 }
 
-void O5mEncodeBase::AddToRefTable(const std::string &encodedStrings)
+void O5mEncode::AddToRefTable(const std::string &encodedStrings)
 {
-	size_t refTableSize = this->stringPairs.Size();
-	assert(refTableSize == this->stringPairsDict.size());
-	size_t availableSpace = refTableMaxSize - refTableSize;
+	assert(this->stringPairs.Size() == this->stringPairsDict.size());
 
 	//Make sure it does not grow forever
-	if(availableSpace == 0)
+	if(this->stringPairs.AvailableSpace() == 0)
 	{
-		const string &st = this->stringPairs.PopFront();
+		const string st = this->stringPairs.PopFront();
 		this->stringPairsDict.erase(st);
 	}
 
@@ -663,249 +548,129 @@ void O5mEncodeBase::AddToRefTable(const std::string &encodedStrings)
 	this->runningRefOffset ++;
 }
 
-bool O5mEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double latIn, double lonIn)
+void O5mEncode::StoreNode(const OsmNode &node)
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
 
-	this->write("\x10",1);
+	std::string data;
+	this->EncodeObjectStart(node, data);
 
-	//Object ID
-	std::stringstream tmpStream;
-	int64_t deltaId = objId - this->lastObjId;
-	tmpStream << EncodeZigzag(deltaId);
-	this->lastObjId = objId;
-
-	this->EncodeMetaData(metaData, tmpStream);
-
-	//Position
-	int64_t lon = round(lonIn * 1e7);
-	int64_t deltaLon = lon - this->lastLon;
-	tmpStream << EncodeZigzag(deltaLon);
+	int64_t lon = RoundCoord(node.lon * 1e7);
+	AppendZigzag(WrapSub(lon, this->lastLon), data);
 	this->lastLon = lon;
-	int64_t lat = round(latIn * 1e7);
-	int64_t deltaLat = lat - this->lastLat;
-	tmpStream << EncodeZigzag(deltaLat);
+	int64_t lat = RoundCoord(node.lat * 1e7);
+	AppendZigzag(WrapSub(lat, this->lastLat), data);
 	this->lastLat = lat;
 
-	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		this->WriteStringPair(it->first, it->second, tmpStream);
-
-	std::string binData = tmpStream.str();
-	std::string len = EncodeVarint(binData.size());
-	*this << len;
-	*this << binData;
-	return false;
+	this->EncodeTags(node.tags, data);
+	this->WriteBlock((char)O5M_NODE, data);
 }
 
-bool O5mEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, const std::vector<int64_t> &refs)
+void O5mEncode::StoreWay(const OsmWay &way)
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
 
-	this->write("\x11", 1);
+	std::string data;
+	this->EncodeObjectStart(way, data);
 
-	//Object ID
-	std::stringstream tmpStream;
-	int64_t deltaId = objId - this->lastObjId;
-	tmpStream << EncodeZigzag(deltaId);
-	this->lastObjId = objId;
-
-	//Store meta data
-	this->EncodeMetaData(metaData, tmpStream);
-
-	//Store nodes
-	std::stringstream refStream;
-	for(size_t i=0; i< refs.size(); i++)
+	std::string encRefs;
+	for(size_t i=0; i<way.refs.size(); i++)
 	{
-		int64_t ref = refs[i]; 
-		int64_t deltaRef = ref - this->lastRefNode;
-		refStream << EncodeZigzag(deltaRef);
-		this->lastRefNode = ref;
+		AppendZigzag(WrapSub(way.refs[i], this->lastRefNode), encRefs);
+		this->lastRefNode = way.refs[i];
 	}
+	AppendVarint(encRefs.size(), data);
+	data.append(encRefs);
 
-	std::string encRefs = refStream.str();
-	tmpStream << EncodeVarint(encRefs.size());
-	tmpStream << encRefs;
-
-	//Write tags
-	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		this->WriteStringPair(it->first, it->second, tmpStream);
-
-	std::string binData = tmpStream.str();
-	*this << EncodeVarint(binData.size());
-	*this << binData;
-	return false;
+	this->EncodeTags(way.tags, data);
+	this->WriteBlock((char)O5M_WAY, data);
 }
-	
-bool O5mEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
-		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
-		const std::vector<std::string> &refRoles)
+
+void O5mEncode::StoreRelation(const OsmRelation &relation)
 {
-	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
-		throw std::invalid_argument("Length of ref vectors must be equal");
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
 
-	this->write("\x12", 1);
+	std::string data;
+	this->EncodeObjectStart(relation, data);
 
-	//Object ID
-	std::stringstream tmpStream;
-	int64_t deltaId = objId - this->lastObjId;
-	tmpStream << EncodeZigzag(deltaId);
-	this->lastObjId = objId;
-
-	//Store meta data
-	this->EncodeMetaData(metaData, tmpStream);
-
-	//Store referenced children
-	std::stringstream refStream;
-	for(size_t i=0; i<refTypeStrs.size(); i++)
+	std::string encRefs;
+	for(size_t i=0; i<relation.members.size(); i++)
 	{
-		const std::string &typeStr = refTypeStrs[i];
-		int64_t refId = refIds[i];
-		const std::string &role = refRoles[i];
-		char typeCode[2] = "0";
+		const RelationMember &member = relation.members[i];
+		if(member.role.find('\0') != std::string::npos)
+			throw std::invalid_argument("o5m strings cannot contain a zero byte");
+
+		char typeCode = '0';
 		int64_t deltaRef = 0;
-		if(typeStr == "node")
+		switch(member.type)
 		{
-			typeCode[0] = '0';
-			deltaRef = refId - this->lastRefNode;
-			this->lastRefNode = refId;
+		case ObjectType::Node:
+			typeCode = '0';
+			deltaRef = WrapSub(member.ref, this->lastRefNode);
+			this->lastRefNode = member.ref;
+			break;
+		case ObjectType::Way:
+			typeCode = '1';
+			deltaRef = WrapSub(member.ref, this->lastRefWay);
+			this->lastRefWay = member.ref;
+			break;
+		case ObjectType::Relation:
+			typeCode = '2';
+			deltaRef = WrapSub(member.ref, this->lastRefRelation);
+			this->lastRefRelation = member.ref;
+			break;
+		default:
+			throw std::invalid_argument("Relation member has an invalid type");
 		}
-		if(typeStr == "way")
-		{
-			typeCode[0] = '1';
-			deltaRef = refId - this->lastRefWay;
-			this->lastRefWay = refId;
-		}
-		if(typeStr == "relation")
-		{
-			typeCode[0] = '2';
-			deltaRef = refId - this->lastRefRelation;
-			this->lastRefRelation = refId;
-		}
+		AppendZigzag(deltaRef, encRefs);
 
-		refStream << EncodeZigzag(deltaRef);
+		std::string typeCodeAndRole(1, typeCode);
+		typeCodeAndRole.append(member.role);
 
-		std::string typeCodeAndRole(typeCode);
-		typeCodeAndRole.append(role);
-
-		bool indexFound = false;
-		size_t refIndex = this->FindStringPairsIndex(typeCodeAndRole, indexFound);
-		if(indexFound)
+		size_t refIndex = 0;
+		if(this->FindStringPairsIndex(typeCodeAndRole, refIndex))
 		{
-			refStream << EncodeVarint(refIndex);
+			AppendVarint(refIndex, encRefs);
 		}
 		else
 		{
-			refStream.write("\x00", 1); //String start byte
-			refStream << typeCodeAndRole;
-			refStream.write("\x00", 1); //String end byte
+			encRefs.append("\x00", 1); //String start byte
+			encRefs.append(typeCodeAndRole);
+			encRefs.append("\x00", 1); //String end byte
 			if(typeCodeAndRole.size() <= this->refTableLengthThreshold)
 				this->AddToRefTable(typeCodeAndRole);
 		}
 	}
-	
-	std::string encRefs = refStream.str();
-	tmpStream << EncodeVarint(encRefs.size());
-	tmpStream << encRefs;
+	AppendVarint(encRefs.size(), data);
+	data.append(encRefs);
 
-	//Write tags
-	for (TagMap::const_iterator it=tags.begin(); it != tags.end(); it++)
-		this->WriteStringPair(it->first, it->second, tmpStream);
-
-	std::string binData = tmpStream.str();
-	*this << EncodeVarint(binData.size());
-	*this << binData;
-	return false;
+	this->EncodeTags(relation.tags, data);
+	this->WriteBlock((char)O5M_RELATION, data);
 }
 
-bool O5mEncodeBase::Sync()
+void O5mEncode::Sync()
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
-	this->write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
-	return false;
+	this->Write("\xee\x07\x00\x00\x00\x00\x00\x00\x00", 9);
 }
 
-bool O5mEncodeBase::Reset()
+void O5mEncode::Reset()
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
-	this->write("\xff", 1);
+	const char code = (char)O5M_RESET;
+	this->Write(&code, 1);
 	this->ResetDeltaCoding();
-	return false;
 }
 
-bool O5mEncodeBase::Finish()
+void O5mEncode::Finish()
 {
-	if(!writtenHeader)
+	if(!this->writtenHeader)
 		this->WriteStart(false);
-	this->write("\xfe", 1);
-	return false;
+	const char code = (char)O5M_EOF;
+	this->Write(&code, 1);
 }
-
-void O5mEncodeBase::write (const char* s, std::streamsize n)
-{
-
-}
-
-void O5mEncodeBase::operator<< (const std::string &val)
-{
-
-}
-
-// **** Output specific encoders
-
-O5mEncode::O5mEncode(std::streambuf &handleIn): O5mEncodeBase(), handle(&handleIn)
-{
-
-}
-
-O5mEncode::~O5mEncode()
-{
-
-}
-
-#ifdef PYTHON_AWARE
-PyO5mEncode::PyO5mEncode(PyObject* obj): O5mEncodeBase()
-{
-	m_PyObj = obj;
-	Py_INCREF(m_PyObj);
-	m_Write = PyObject_GetAttrString(m_PyObj, "write");
-}
-
-PyO5mEncode::~PyO5mEncode()
-{
-	Py_XDECREF(m_Write);
-	Py_XDECREF(m_PyObj);
-}
-
-void PyO5mEncode::write (const char* s, std::streamsize n)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
-	#endif 
-	Py_XDECREF(ret);
-}
-
-void PyO5mEncode::operator<< (const std::string &val)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
-	#endif 
-	Py_XDECREF(ret);
-}
-
-#endif //PYTHON_AWARE

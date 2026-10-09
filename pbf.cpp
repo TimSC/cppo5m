@@ -1,409 +1,421 @@
 #include "pbf.h"
-#include <iostream>
-#include <fstream>
-#include <sstream>
+#include "intmath.h"
+#include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <stdexcept>
 #include "pbf/fileformat.pb.h"
 #include "pbf/osmformat.pb.h"
 #include <arpa/inet.h>
-#include <boost/iostreams/filtering_streambuf.hpp>
-#include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
-#include "OsmData.h"
-#include "utils.h"
+#include <cstring>
+#include <zlib.h>
 using namespace std;
 
-// https://stackoverflow.com/questions/27529570/simple-zlib-c-string-compression-and-decompression
-std::string CompressData(const std::string &data)
+// Size limits from the PBF specification
+static const uint32_t PBF_MAX_BLOB_HEADER_SIZE = 64 * 1024;
+static const uint32_t PBF_MAX_BLOB_SIZE = 32 * 1024 * 1024;
+
+static std::string CompressData(const std::string &data)
 {
-    std::stringstream compressed;
-    std::stringstream decompressed;
-    decompressed << data;
-    boost::iostreams::filtering_streambuf<boost::iostreams::input> out;
-    out.push(boost::iostreams::zlib_compressor());
-    out.push(decompressed);
-    boost::iostreams::copy(out, compressed);
-    return compressed.str();
+	uLongf len = compressBound(data.size());
+	std::string out(len, '\0');
+	if(compress2((Bytef *)&out[0], &len, (const Bytef *)data.data(), data.size(), Z_DEFAULT_COMPRESSION) != Z_OK)
+		throw std::runtime_error("Error compressing PBF blob");
+	out.resize(len);
+	return out;
 }
 
-std::string DecompressData(const std::string &data)
+///Inflates zlib data, stopping with an error as soon as the output would pass
+///maxSize. A small blob can expand enormously, so the limit is enforced while
+///inflating, not afterwards.
+static std::string DecompressData(const std::string &data, size_t maxSize)
 {
-    std::stringstream compressed;
-    std::stringstream decompressed;
-    compressed << data;
-    boost::iostreams::filtering_streambuf<boost::iostreams::input> in;
-    in.push(boost::iostreams::zlib_decompressor());
-    in.push(compressed);
-    boost::iostreams::copy(in, decompressed);
-    return decompressed.str();
+	z_stream zs;
+	memset(&zs, 0, sizeof(zs));
+	if(inflateInit(&zs) != Z_OK)
+		throw OsmDecodeError("Error starting PBF blob decompression");
+
+	std::string out;
+	char chunk[64 * 1024];
+	zs.next_in = (Bytef *)data.data();
+	zs.avail_in = data.size();
+	int ret = Z_OK;
+	while(ret != Z_STREAM_END)
+	{
+		zs.next_out = (Bytef *)chunk;
+		zs.avail_out = sizeof(chunk);
+		ret = inflate(&zs, Z_NO_FLUSH);
+		size_t produced = sizeof(chunk) - zs.avail_out;
+		if(ret != Z_OK && ret != Z_STREAM_END)
+		{
+			inflateEnd(&zs);
+			throw OsmDecodeError("PBF blob has corrupt compressed data");
+		}
+		if(out.size() + produced > maxSize)
+		{
+			inflateEnd(&zs);
+			throw OsmDecodeError("PBF blob decompresses to more than the format allows");
+		}
+		out.append(chunk, produced);
+		if(ret == Z_OK && produced == 0 && zs.avail_in == 0)
+		{
+			inflateEnd(&zs);
+			throw OsmDecodeError("PBF blob compressed data is incomplete");
+		}
+	}
+	inflateEnd(&zs);
+	return out;
 }
 
-void ReadExactLengthPbf(std::istream &str, char *out, size_t len)
+///File timestamps are in units of date_granularity milliseconds.
+static int64_t DecodeTimestamp(int64_t value, int32_t date_granularity)
+{
+	int64_t milliseconds = 0;
+	if(__builtin_mul_overflow(value, (int64_t)date_granularity, &milliseconds))
+		throw OsmDecodeError("PBF timestamp is out of range");
+	return milliseconds / 1000;
+}
+
+static int64_t EncodeTimestamp(int64_t seconds, int32_t date_granularity)
+{
+	int64_t milliseconds = 0;
+	if(__builtin_mul_overflow(seconds, (int64_t)1000, &milliseconds))
+		throw std::range_error("Timestamp is too large for the PBF format");
+	return milliseconds / date_granularity;
+}
+
+static void ReadExactLengthPbf(std::istream &str, char *out, size_t len)
 {
 	size_t total = 0;
 	while(total < len)
 	{
 		str.read(&out[total], len-total);
 		total += str.gcount();
-		//std::cout << "Read " << total << " of " << len << std::endl;
-		if(str.fail())
-			throw std::runtime_error("Input underflow");
+		if(str.fail() && total < len)
+			throw OsmDecodeError("PBF input ends part way through a block");
 	}
 }
 
-bool DecodeOsmHeader(std::string &decBlob,
-	class IDataStreamHandler* output)
+///Looks up a string table entry. Entry zero is always the empty string, which
+///is how an empty tag value, role or user name is stored.
+static bool LookupString(const std::vector<std::string> &stringTab, int64_t index, const std::string *&out)
+{
+	if(index < 0 || (uint64_t)index >= stringTab.size())
+		return false;
+	out = &stringTab[index];
+	return true;
+}
+
+template <class T> static void DecodeTags(const T &obj, const std::vector<std::string> &stringTab, TagMap &tags)
+{
+	for(int j=0; j<obj.keys_size() and j<obj.vals_size(); j++)
+	{
+		const std::string *key = nullptr, *val = nullptr;
+		if(LookupString(stringTab, obj.keys(j), key) and LookupString(stringTab, obj.vals(j), val))
+			tags[*key] = *val;
+	}
+}
+
+static void DecodeOsmHeader(const std::string &decBlob, IDataStreamHandler &output)
 {
 	OSMPBF::HeaderBlock hb;
-	std::istringstream iss(decBlob);
-	bool ok = hb.ParseFromIstream(&iss);
-	if(!ok)
-		throw runtime_error("Error decoding PBF HeaderBlock");
+	if(!hb.ParseFromString(decBlob))
+		throw OsmDecodeError("Error decoding PBF HeaderBlock");
+
+	for(int i=0; i<hb.required_features_size(); i++)
+	{
+		const std::string &feature = hb.required_features(i);
+		if(feature != "OsmSchema-V0.6" and feature != "DenseNodes" and feature != "HistoricalInformation")
+			throw OsmDecodeError("PBF file requires an unsupported feature: " + feature);
+	}
 
 	if(hb.has_bbox())
 	{
 		const OSMPBF::HeaderBBox &bbox = hb.bbox();
-		
 		if(bbox.has_left() and bbox.has_right() and bbox.has_top() and bbox.has_bottom())
-		{
-			bool halt = false;
-			if(output)
-				output->StoreBounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9);
-			if(halt) return true;
-		}
+			output.StoreBounds(Bounds(bbox.left()*1e-9, bbox.bottom()*1e-9, bbox.right()*1e-9, bbox.top()*1e-9));
 	}
-	return false;
 }
 
-void DecodeOsmInfo(const OSMPBF::Info &info, int32_t date_granularity, const std::vector<std::string> &stringTab, class MetaData &out)
+static void DecodeOsmInfo(const OSMPBF::Info &info, int32_t date_granularity, const std::vector<std::string> &stringTab, MetaData &out)
 {
 	if(info.has_version())
 		out.version = info.version();
 	if(info.has_timestamp())
-		out.timestamp = info.timestamp()*date_granularity / 1000;
+		out.timestamp = DecodeTimestamp(info.timestamp(), date_granularity);
 	if(info.has_changeset())
 		out.changeset = info.changeset();
 	if(info.has_uid())
 		out.uid = info.uid();
-	if(info.has_user_sid() and info.user_sid() > 0 and info.user_sid() < stringTab.size())
-		out.username = stringTab[info.user_sid()];
+	const std::string *username = nullptr;
+	if(info.has_user_sid() and LookupString(stringTab, info.user_sid(), username))
+		out.username = *username;
 	if(info.has_visible())
 		out.visible = info.visible();
 }
 
-bool DecodeOsmNodes(const OSMPBF::PrimitiveGroup& pg,
+static void DecodeOsmNodes(const OSMPBF::PrimitiveGroup& pg,
 	int64_t lat_offset, int64_t lon_offset,
 	int32_t granularity, 
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	class IDataStreamHandler* output)
+	IDataStreamHandler &output)
 {
 	for(int i=0; i<pg.nodes_size(); i++)
 	{
-		const OSMPBF::Node &node = pg.nodes(i);
-		class MetaData metaData;
-		TagMap tags;
-		
-		for(int j=0; j<node.keys_size() and j<node.vals_size(); j++)
-		{
-			uint32_t keyIndex = node.keys(j);
-			uint32_t valIndex = node.vals(j);
-			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
-				tags[stringTab[keyIndex]] = stringTab[valIndex];
-		}
-
-		if(node.has_info())
-		{
-			const OSMPBF::Info &info = node.info();
-			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
-		}
-
-		bool halt = false;
-		if(output)
-			output->StoreNode(node.id(), metaData, 
-				tags, 
-				1e-9 * (lat_offset + (granularity * node.lat())), 
-				1e-9 * (lon_offset + (granularity * node.lon())));
-		if(halt)
-			return true;
+		const OSMPBF::Node &pbfNode = pg.nodes(i);
+		OsmNode node;
+		node.objId = pbfNode.id();
+		DecodeTags(pbfNode, stringTab, node.tags);
+		if(pbfNode.has_info())
+			DecodeOsmInfo(pbfNode.info(), date_granularity, stringTab, node.metaData);
+		node.lat = 1e-9 * ((double)lat_offset + (double)granularity * (double)pbfNode.lat());
+		node.lon = 1e-9 * ((double)lon_offset + (double)granularity * (double)pbfNode.lon());
+		output.StoreNode(node);
 	}
-	return false;
 }
 
-bool DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
+static void DecodeOsmDenseNodes(const OSMPBF::DenseNodes &dense,
 	int64_t lat_offset, int64_t lon_offset,
 	int32_t granularity, int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	class IDataStreamHandler* output)
+	IDataStreamHandler &output)
 {
-	//Decode tags
-	vector<map<string, string> > tags;
-	map<string, string> current;
-	for(int j=0; j<dense.keys_vals_size(); j++)
-	{
-		int32_t sti = dense.keys_vals(j);
-		if(sti > 0 and (size_t)sti < stringTab.size() and j<dense.keys_vals_size()-1)
-		{
-			int32_t sti2 = dense.keys_vals(j+1);
-			current[stringTab[sti]] = stringTab[sti2];
-			j++;
-		}
-		else
-		{
-			tags.push_back(current);
-			current.clear();
-		}
-	}
+	//Tags for all the nodes are in one list: key and value indices for each
+	//node in turn, with a zero ending each node's entries
+	int kvc = 0;
 
 	int64_t idc = 0, latc = 0, lonc = 0, timestampc = 0, changesetc = 0;
-	int32_t uidc = 0, user_sidc = 0;
+	int64_t uidc = 0, user_sidc = 0;
+	OsmNode node;
 	for(int j=0; j<dense.id_size() and j<dense.lat_size() and j<dense.lon_size(); j++)
 	{
-		idc += dense.id(j);
-		latc += dense.lat(j);
-		lonc += dense.lon(j);
+		idc = WrapAdd(idc, dense.id(j));
+		latc = WrapAdd(latc, dense.lat(j));
+		lonc = WrapAdd(lonc, dense.lon(j));
 
-		class MetaData metaData;
-		TagMap empty;
-		const TagMap *tagMapPtr = &empty;
-		if((size_t)j < tags.size())
-			tagMapPtr = &tags[j];
-		
+		node.objId = idc;
+		node.metaData = MetaData();
+		node.tags.clear();
+
+		while(kvc < dense.keys_vals_size())
+		{
+			int32_t keyIndex = dense.keys_vals(kvc);
+			kvc ++;
+			if(keyIndex == 0)
+				break;
+			if(kvc >= dense.keys_vals_size())
+				throw OsmDecodeError("PBF dense node tag has a key without a value");
+			int32_t valIndex = dense.keys_vals(kvc);
+			kvc ++;
+			const std::string *key = nullptr, *val = nullptr;
+			if(LookupString(stringTab, keyIndex, key) and LookupString(stringTab, valIndex, val))
+				node.tags[*key] = *val;
+		}
+
 		if(dense.has_denseinfo())
 		{
 			const OSMPBF::DenseInfo &di = dense.denseinfo();
 			if(j < di.version_size())
-				metaData.version = di.version(j);
+				node.metaData.version = di.version(j);
 
 			if(j < di.timestamp_size())
 			{
-				timestampc += di.timestamp(j);
-				metaData.timestamp = timestampc*date_granularity / 1000;
+				timestampc = WrapAdd(timestampc, di.timestamp(j));
+				node.metaData.timestamp = DecodeTimestamp(timestampc, date_granularity);
 			}
 
 			if(j < di.changeset_size())
 			{
-				changesetc += di.changeset(j);
-				metaData.changeset = changesetc;
+				changesetc = WrapAdd(changesetc, di.changeset(j));
+				node.metaData.changeset = changesetc;
 			}
 
 			if(j < di.uid_size())
 			{
-				uidc += di.uid(j);
-				metaData.uid = uidc;
+				uidc = WrapAdd(uidc, di.uid(j));
+				node.metaData.uid = uidc;
 			}
 
 			if(j < di.user_sid_size())
 			{
-				user_sidc += di.user_sid(j);
-				if(user_sidc > 0 and (size_t)user_sidc < stringTab.size())
-					metaData.username = stringTab[user_sidc];
+				user_sidc = WrapAdd(user_sidc, di.user_sid(j));
+				const std::string *username = nullptr;
+				if(LookupString(stringTab, user_sidc, username))
+					node.metaData.username = *username;
 			}
 
 			if(j < di.visible_size())
-				metaData.visible = di.visible(j);
-
+				node.metaData.visible = di.visible(j);
 		}
 
-		bool halt = false;
-		if(output)
-			output->StoreNode(idc, metaData, 
-				*tagMapPtr, 
-				1e-9 * (lat_offset + (granularity * latc)), 
-				1e-9 * (lon_offset + (granularity * lonc)));
-		if(halt)
-			return true;
+		node.lat = 1e-9 * ((double)lat_offset + (double)granularity * (double)latc);
+		node.lon = 1e-9 * ((double)lon_offset + (double)granularity * (double)lonc);
+		output.StoreNode(node);
 	}
-	return false;
 }
 
-bool DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
+static void DecodeOsmWays(const OSMPBF::PrimitiveGroup& pg,
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	class IDataStreamHandler* output)
+	IDataStreamHandler &output)
 {
 	for(int i=0; i<pg.ways_size(); i++)
 	{
-		const OSMPBF::Way &way = pg.ways(i);
-		class MetaData metaData;
-		TagMap tags;
-		std::vector<int64_t> refs;
-		
-		for(int j=0; j<way.keys_size() and j<way.vals_size(); j++)
-		{
-			uint32_t keyIndex = way.keys(j);
-			uint32_t valIndex = way.vals(j);
-			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
-				tags[stringTab[keyIndex]] = stringTab[valIndex];
-		}
-
-		if(way.has_info())
-		{
-			const OSMPBF::Info &info = way.info();
-			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
-		}
+		const OSMPBF::Way &pbfWay = pg.ways(i);
+		OsmWay way;
+		way.objId = pbfWay.id();
+		DecodeTags(pbfWay, stringTab, way.tags);
+		if(pbfWay.has_info())
+			DecodeOsmInfo(pbfWay.info(), date_granularity, stringTab, way.metaData);
 
 		int64_t refsc = 0;
-		for(int j=0; j<way.refs_size(); j++)
+		way.refs.reserve(pbfWay.refs_size());
+		for(int j=0; j<pbfWay.refs_size(); j++)
 		{
-			refsc += way.refs(j);
-			refs.push_back(refsc);
+			refsc = WrapAdd(refsc, pbfWay.refs(j));
+			way.refs.push_back(refsc);
 		}
-		
-		bool halt = false;
-		if(output)
-			output->StoreWay(way.id(), metaData, 
-				tags, refs);
-		if(halt)
-			return true;
+		output.StoreWay(way);
 	}
-	return false;
 }
 
-bool DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
+static void DecodeOsmRelations(const OSMPBF::PrimitiveGroup& pg,
 	int32_t date_granularity,
 	const std::vector<std::string> &stringTab,
-	class IDataStreamHandler* output)
+	IDataStreamHandler &output)
 {
 	for(int i=0; i<pg.relations_size(); i++)
 	{
-		const OSMPBF::Relation &relation = pg.relations(i);
-		class MetaData metaData;
-		TagMap tags;
-		std::vector<std::string> refTypeStrs;
-		std::vector<int64_t> refIds;
-		std::vector<std::string> refRoles;
-		
-		for(int j=0; j<relation.keys_size() and j<relation.vals_size(); j++)
-		{
-			uint32_t keyIndex = relation.keys(j);
-			uint32_t valIndex = relation.vals(j);
-			if(keyIndex > 0 and keyIndex < stringTab.size() and valIndex > 0 and valIndex < stringTab.size())
-				tags[stringTab[keyIndex]] = stringTab[valIndex];
-		}
+		const OSMPBF::Relation &pbfRelation = pg.relations(i);
+		OsmRelation relation;
+		relation.objId = pbfRelation.id();
+		DecodeTags(pbfRelation, stringTab, relation.tags);
+		if(pbfRelation.has_info())
+			DecodeOsmInfo(pbfRelation.info(), date_granularity, stringTab, relation.metaData);
 
-		if(relation.has_info())
-		{
-			const OSMPBF::Info &info = relation.info();
-			DecodeOsmInfo(info, date_granularity, stringTab, metaData);
-		}
+		if(pbfRelation.memids_size() != pbfRelation.types_size() or
+			pbfRelation.memids_size() != pbfRelation.roles_sid_size())
+			throw OsmDecodeError("PBF relation member lists have different lengths");
 
 		int64_t memidsc = 0;
-		for(int j=0; j<relation.memids_size() and j<relation.types_size() and j<relation.roles_sid_size(); j++)
+		for(int j=0; j<pbfRelation.memids_size(); j++)
 		{
-			memidsc += relation.memids(j);
-			switch(relation.types(j))
+			memidsc = WrapAdd(memidsc, pbfRelation.memids(j));
+			RelationMember member;
+			member.ref = memidsc;
+			switch(pbfRelation.types(j))
 			{
 				case OSMPBF::Relation_MemberType_NODE:
-					refTypeStrs.push_back("node");
+					member.type = ObjectType::Node;
 					break;
 				case OSMPBF::Relation_MemberType_WAY:
-					refTypeStrs.push_back("way");
+					member.type = ObjectType::Way;
 					break;
 				case OSMPBF::Relation_MemberType_RELATION:
-					refTypeStrs.push_back("relation");
+					member.type = ObjectType::Relation;
 					break;
 				default:
-					refTypeStrs.push_back("");
-					break;
+					throw OsmDecodeError("PBF relation member has an unknown type");
 			}
-			refIds.push_back(memidsc);
-			int32_t roleIndex = relation.roles_sid(j);
-			if(roleIndex > 0 and (size_t)roleIndex < stringTab.size())
-				refRoles.push_back(stringTab[roleIndex]);
-			else
-				refRoles.push_back("");
+			const std::string *role = nullptr;
+			if(LookupString(stringTab, pbfRelation.roles_sid(j), role))
+				member.role = *role;
+			relation.members.push_back(member);
 		}
-		
-		bool halt = false;
-		if(output)
-			output->StoreRelation(relation.id(), metaData, 
-				tags, refTypeStrs, refIds, refRoles);
-		if(halt)
-			return true;	
+		output.StoreRelation(relation);
 	}
-	return false;
 }
 
 // ********************************************
 
-PbfDecode::PbfDecode(std::streambuf &handleIn):
-	OsmDecoder(),
-	handle(&handleIn)
-{
-
-}
-
-PbfDecode::~PbfDecode()
+PbfDecode::PbfDecode(std::streambuf &input, IDataStreamHandler &outputIn):
+	OsmDecoder(outputIn),
+	handle(&input),
+	anyObject(false),
+	prevObjType(ObjectType::Node)
 {
 
 }
 
 bool PbfDecode::DecodeNext()
 {
-	int32_t blobHeaderLenNbo;
-	ReadExactLengthPbf(handle, (char*)&blobHeaderLenNbo, sizeof(int32_t));
-	int32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
+	if(this->finished)
+		return false;
+
+	if(this->handle.peek() == std::char_traits<char>::eof())
+	{
+		this->MarkFinished();
+		return false;
+	}
+
+	uint32_t blobHeaderLenNbo = 0;
+	ReadExactLengthPbf(handle, (char*)&blobHeaderLenNbo, sizeof(uint32_t));
+	uint32_t blobHeaderLen = ntohl(blobHeaderLenNbo);
+	if(blobHeaderLen > PBF_MAX_BLOB_HEADER_SIZE)
+		throw OsmDecodeError("PBF blob header is larger than the format allows");
 
 	std::string refData;
 	refData.resize(blobHeaderLen);
-	ReadExactLengthPbf(handle, &refData[0], blobHeaderLen);
+	if(blobHeaderLen > 0)
+		ReadExactLengthPbf(handle, &refData[0], blobHeaderLen);
 
 	OSMPBF::BlobHeader header;
-	std::istringstream iss(refData);
-	bool ok = header.ParseFromIstream(&iss);
-	if(!ok)
-		throw runtime_error("Error decoding PBF BlobHeader");
+	if(!header.ParseFromString(refData))
+		throw OsmDecodeError("Error decoding PBF BlobHeader");
 
-	std::string headerType = header.type();
-
-	int32_t blobSize = header.datasize();
+	if(header.datasize() < 0 or (uint32_t)header.datasize() > PBF_MAX_BLOB_SIZE)
+		throw OsmDecodeError("PBF blob is larger than the format allows");
 	std::string refData2;
-	refData2.resize(blobSize);
-	ReadExactLengthPbf(handle, &refData2[0], blobSize);
+	refData2.resize(header.datasize());
+	if(header.datasize() > 0)
+		ReadExactLengthPbf(handle, &refData2[0], header.datasize());
+
+	const std::string &headerType = header.type();
+	if(headerType != "OSMHeader" and headerType != "OSMData")
+		return true; //The specification says to skip blob types we do not know
 
 	OSMPBF::Blob blob;
-	std::istringstream iss2(refData2);
-	ok = blob.ParseFromIstream(&iss2);
-	if(!ok)
-		throw runtime_error("Error decoding PBF Blob");
+	if(!blob.ParseFromString(refData2))
+		throw OsmDecodeError("Error decoding PBF Blob");
 
 	string decBlob;
 	if(blob.has_raw())
+	{
+		if(blob.raw().size() > PBF_MAX_BLOB_SIZE)
+			throw OsmDecodeError("PBF blob is larger than the format allows");
 		decBlob = blob.raw();
+	}
 	else if(blob.has_zlib_data())
-		decBlob = DecompressData(blob.zlib_data());
+	{
+		if(blob.has_raw_size() and (blob.raw_size() < 0 or (uint32_t)blob.raw_size() > PBF_MAX_BLOB_SIZE))
+			throw OsmDecodeError("PBF blob is larger than the format allows");
+		size_t maxSize = blob.has_raw_size() ? (size_t)blob.raw_size() : PBF_MAX_BLOB_SIZE;
+		decBlob = DecompressData(blob.zlib_data(), maxSize);
+		if(blob.has_raw_size() and decBlob.size() != (size_t)blob.raw_size())
+			throw OsmDecodeError("PBF blob does not decompress to its stated size");
+	}
+	else
+		throw OsmDecodeError("PBF blob uses an unsupported compression method");
 
-	bool halt = false;
 	if(headerType == "OSMHeader")
-		halt = DecodeOsmHeader(decBlob, this->output);
-
-	else if(headerType == "OSMData")
-		halt = DecodeOsmData(decBlob);
-
-	if(halt) return false;
+		DecodeOsmHeader(decBlob, this->output);
+	else
+		this->DecodeOsmData(decBlob);
 	return true;
 }
 
-void PbfDecode::DecodeFinish()
-{
-	if(this->output)
-		this->output->Finish();
-}
-
-bool PbfDecode::DecodeOsmData(std::string &decBlob)
+void PbfDecode::DecodeOsmData(const std::string &decBlob)
 {
 	OSMPBF::PrimitiveBlock pb;
-	std::istringstream iss(decBlob);
-	bool ok = pb.ParseFromIstream(&iss);
-	if(!ok)
-		throw runtime_error("Error decoding PBF PrimitiveBlock");
+	if(!pb.ParseFromString(decBlob))
+		throw OsmDecodeError("Error decoding PBF PrimitiveBlock");
 
 	std::vector<std::string> stringTab;
 	if(pb.has_stringtable())
 	{
 		const OSMPBF::StringTable &st = pb.stringtable();
+		stringTab.reserve(st.s_size());
 		for(int i=0; i<st.s_size(); i++)
 			stringTab.push_back(st.s(i));
 	}
@@ -417,72 +429,69 @@ bool PbfDecode::DecodeOsmData(std::string &decBlob)
 	if(pb.has_lon_offset())
 		lon_offset = pb.lon_offset();
 	if(pb.has_date_granularity())
-		lon_offset = pb.date_granularity();
+		date_granularity = pb.date_granularity();
 
 	int pbs = pb.primitivegroup_size();
 	for(int i=0; i<pbs; i++)
 	{
-		bool halt = false;
 		const OSMPBF::PrimitiveGroup& pg = pb.primitivegroup(i);
 
 		if(pg.nodes_size() > 0)
 		{
-			halt |= CheckOutputType("n");
-			halt |= DecodeOsmNodes(pg, lat_offset, lon_offset,
+			CheckOutputType(ObjectType::Node);
+			DecodeOsmNodes(pg, lat_offset, lon_offset,
 				granularity, date_granularity,
 				stringTab, this->output);	
 		}
 
 		if(pg.has_dense())
 		{
-			halt |= CheckOutputType("n");
-			const OSMPBF::DenseNodes &dense = pg.dense();
-			halt |= DecodeOsmDenseNodes(dense, lat_offset, lon_offset,
+			CheckOutputType(ObjectType::Node);
+			DecodeOsmDenseNodes(pg.dense(), lat_offset, lon_offset,
 				granularity, date_granularity,
 				stringTab, this->output);
 		}
 
 		if(pg.ways_size() > 0)
 		{
-			halt |= CheckOutputType("w");
-			halt |= DecodeOsmWays(pg, date_granularity,
+			CheckOutputType(ObjectType::Way);
+			DecodeOsmWays(pg, date_granularity,
 				stringTab, this->output);
 		}
 
 		if(pg.relations_size() > 0)
 		{
-			halt |= CheckOutputType("r");
-			halt |= DecodeOsmRelations(pg, date_granularity,
+			CheckOutputType(ObjectType::Relation);
+			DecodeOsmRelations(pg, date_granularity,
 				stringTab, this->output);
 		}
 
 		//Changeset decoding not supported
-
-		if(halt)
-			return true;
 	}
-	return false;
 }
 
-bool PbfDecode::CheckOutputType(const char *objType)
+void PbfDecode::CheckOutputType(ObjectType objType)
 {
 	//Some encoders need to know when we switch object type
-	bool halt = false;
-	if(prevObjType != objType and prevObjType.length() > 0)		
-		if(output)
-		{
-			halt |= output->Sync();
-			halt |= output->Reset();
-		}
-
-	prevObjType = objType;
-	return halt;
+	if(this->anyObject and this->prevObjType != objType)
+		this->output.Reset();
+	this->anyObject = true;
+	this->prevObjType = objType;
 }
 
 // *******************************************
 
+///PBF stores the version and user ID in 32 bits. Refuse values that do not
+///fit instead of writing something else.
+static void CheckPbfMetaData(const MetaData &metaData)
+{
+	if(metaData.version > (uint64_t)INT32_MAX)
+		throw std::range_error("Object version is too large for the PBF format");
+	if(metaData.uid > (uint64_t)INT32_MAX)
+		throw std::range_error("User ID is too large for the PBF format");
+}
 
-void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_t startc, 
+static void GenerateStringTable(const std::vector<const OsmObject *> &ways, size_t startc, 
 	bool encodeMetaData, 
 	size_t &maxWaysToProcess, OSMPBF::StringTable *st, 
 	std::map<std::string, int32_t> &strIndexOut)
@@ -491,7 +500,7 @@ void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_
 	size_t processed = 0;
 	for(size_t i=startc; i<startc + maxWaysToProcess; i++)
 	{
-		const class OsmObject &n = *(ways[i]);
+		const OsmObject &n = *(ways[i]);
 		const TagMap &tags = n.tags;
 		for(auto it = tags.begin(); it != tags.end(); it++)
 		{
@@ -517,17 +526,17 @@ void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_
 				strFreq[n.metaData.username] = 1;
 		}
 
-		const class OsmRelation *rel = dynamic_cast<const class OsmRelation *>(&n);
+		const OsmRelation *rel = dynamic_cast<const OsmRelation *>(&n);
 		if(rel != nullptr)
 		{
-			const std::vector<std::string> &refRoles = rel->refRoles;
-			for(size_t j=0; j<refRoles.size(); j++)
+			for(size_t j=0; j<rel->members.size(); j++)
 			{
-				auto it2 = strFreq.find(refRoles[j]);
+				const std::string &role = rel->members[j].role;
+				auto it2 = strFreq.find(role);
 				if(it2 != strFreq.end())
 					it2->second ++;
 				else
-					strFreq[refRoles[j]] = 1;
+					strFreq[role] = 1;
 			}
 		}
 
@@ -568,113 +577,72 @@ void GenerateStringTable(const std::vector<const class OsmObject *> &ways, size_
 
 // *******************************************
 
-PbfEncodeBase::PbfEncodeBase()
+PbfEncode::PbfEncode(std::shared_ptr<ByteSink> sinkIn) :
+	OsmEncoder(sinkIn),
+	anyObject(false),
+	prevObjType(ObjectType::Node)
 {
 	encodeMetaData = true;
 	encodeHistorical = false;
-	maxGroupObjects = 8000;
+	maxBlockObjects = 8000;
 	headerWritten = false;
 	compressUsingZLib = true;
 	writingProgram = "cppo5m";
-	maxPayloadSize = 32 * 1024 * 1024;
-	maxHeaderSize = 64 * 1024;
-	optimalDenseNodes = 1200000;
-	optimalWays = 200000;
-	optimalRelations = 100000;
+	maxPayloadSize = PBF_MAX_BLOB_SIZE;
+	maxHeaderSize = PBF_MAX_BLOB_HEADER_SIZE;
 	lat_offset = 0;
 	lon_offset = 0;
 	granularity = 100;
 	date_granularity=1000;
 }
 
-PbfEncodeBase::~PbfEncodeBase()
+PbfEncode::PbfEncode(std::streambuf &output) :
+	PbfEncode(std::make_shared<StreamSink>(output))
 {
 
 }
 
-bool PbfEncodeBase::Sync()
-{
-	EncodeBuffer();
-	return false;
-}
-
-bool PbfEncodeBase::Reset()
-{
-	return false;
-}
-
-bool PbfEncodeBase::Finish()
+void PbfEncode::Finish()
 {
 	this->EncodeBuffer();
-	return false;
 }
 
-bool PbfEncodeBase::StoreIsDiff(bool)
+void PbfEncode::StoreBounds(const Bounds &bounds)
 {
-	return false;
+	//Only the first is kept; it goes in the header, which is written with the first block
+	if(!this->headerWritten and this->buffer.bounds.empty())
+		this->buffer.bounds.push_back(bounds);
 }
 
-bool PbfEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
+///A block holds one type of object, so write it out when the type changes, and
+///when it is full. Only one block's worth of objects is ever held in memory.
+void PbfEncode::BeforeStore(ObjectType objType, size_t buffered)
 {
-	buffer.StoreBounds(x1, y1, x2, y2);
-	return false;
-}
-
-bool PbfEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, double lat, double lon)
-{
-	if(prevObjType != "n" and prevObjType.size() > 0)
+	if((this->anyObject and this->prevObjType != objType) or buffered >= std::max<size_t>(maxBlockObjects, 1))
 		this->EncodeBuffer();
-
-	if(buffer.nodes.size() >= optimalDenseNodes)
-		this->EncodeBuffer();
-
-	buffer.StoreNode(objId, metaData, tags, lat, lon);
-
-	prevObjType = "n";
-	return false;
+	this->anyObject = true;
+	this->prevObjType = objType;
 }
 
-bool PbfEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, const std::vector<int64_t> &refs)
+void PbfEncode::StoreNode(const OsmNode &node)
 {
-	if(prevObjType != "w" and prevObjType.size() > 0)
-	{
-		this->EncodeBuffer();
-	}
-
-	buffer.StoreWay(objId, metaData, tags, refs);
-
-	prevObjType = "w";
-	return false;
+	this->BeforeStore(ObjectType::Node, buffer.nodes.size());
+	buffer.nodes.push_back(node);
 }
 
-bool PbfEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
-	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
-	const std::vector<std::string> &refRoles)
+void PbfEncode::StoreWay(const OsmWay &way)
 {
-	if(prevObjType != "r" and prevObjType.size() > 0)
-	{
-		this->EncodeBuffer();
-	}
-
-	buffer.StoreRelation(objId, metaData, tags, refTypeStrs, refIds, refRoles);
-
-	prevObjType = "r";
-	return false;
+	this->BeforeStore(ObjectType::Way, buffer.ways.size());
+	buffer.ways.push_back(way);
 }
 
-void PbfEncodeBase::write (const char* s, std::streamsize n)
+void PbfEncode::StoreRelation(const OsmRelation &relation)
 {
-
+	this->BeforeStore(ObjectType::Relation, buffer.relations.size());
+	buffer.relations.push_back(relation);
 }
 
-void PbfEncodeBase::operator<< (const std::string &val)
-{
-
-}
-
-void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char *type)
+void PbfEncode::WriteBlobPayload(const std::string &blobPayload, const char *type)
 {
 	//cout << type << "," << blobPayload.size() << endl;
 	if(blobPayload.size() > this->maxPayloadSize)
@@ -696,13 +664,15 @@ void PbfEncodeBase::WriteBlobPayload(const std::string &blobPayload, const char 
 	header.SerializeToString(&packedHeader);
 
 	int32_t headerSizePk = htonl(packedHeader.size());
-	this->write ((char*)&headerSizePk, sizeof(int32_t));
-	this->write (packedHeader.c_str(), packedHeader.size());
-	this->write (packedBlob.c_str(), packedBlob.size());
+	this->Write((const char*)&headerSizePk, sizeof(int32_t));
+	this->Write(packedHeader);
+	this->Write(packedBlob);
 }
 
-void PbfEncodeBase::EncodeBuffer()
+void PbfEncode::EncodeBuffer()
 {
+	if(this->granularity <= 0 or this->date_granularity <= 0)
+		throw std::invalid_argument("PBF granularity settings must be positive");
 	if(!headerWritten)
 	{
 		std::string hbEncoded;
@@ -719,9 +689,7 @@ void PbfEncodeBase::EncodeBuffer()
 		return;
 	if(countTypes > 1)
 	{
-		std::string errStr = "If you're seeing this, the code is in what I thought was an unreachable state.";
-		errStr += " On a deep level, I know I'm not up to this task. I'm so sorry.";
-		throw logic_error(errStr);
+		throw logic_error("PBF encoder buffer holds more than one type of object");
 	}
 	if(this->buffer.nodes.size() > 0)
 	{
@@ -759,7 +727,7 @@ void PbfEncodeBase::EncodeBuffer()
 	this->buffer.Clear();
 }
 
-void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
+void PbfEncode::EncodeHeaderBlock(std::string &out)
 {
 	OSMPBF::HeaderBlock hb;
 
@@ -769,15 +737,15 @@ void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
 		hb.add_required_features("HistoricalInformation");
 	hb.set_writingprogram(this->writingProgram);
 
-	if(buffer.bounds.size() > 0 and buffer.bounds[0].size() >= 4)
+	if(buffer.bounds.size() > 0)
 	{
 		OSMPBF::HeaderBBox *bbox = hb.mutable_bbox();
-		std::vector<double> srcBbox = buffer.bounds[0]; //Only the first bbox is considered
+		const Bounds &srcBbox = buffer.bounds[0]; //Only the first bbox is considered
 
-		bbox->set_left(std::round(srcBbox[0] / 1e-9));
-		bbox->set_bottom(std::round(srcBbox[1] / 1e-9));
-		bbox->set_right(std::round(srcBbox[2] / 1e-9));
-		bbox->set_top(std::round(srcBbox[3] / 1e-9));
+		bbox->set_left(RoundCoord(srcBbox.minLon / 1e-9));
+		bbox->set_bottom(RoundCoord(srcBbox.minLat / 1e-9));
+		bbox->set_right(RoundCoord(srcBbox.maxLon / 1e-9));
+		bbox->set_top(RoundCoord(srcBbox.maxLat / 1e-9));
 	}
 
 	hb.SerializeToString(&out);
@@ -786,7 +754,7 @@ void PbfEncodeBase::EncodeHeaderBlock(std::string &out)
 		throw runtime_error("HeaderBlock size exceeds what PBF allows");
 }
 
-void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, size_t &nodec, 
+void PbfEncode::EncodePbfDenseNodes(const std::vector<OsmNode> &nodes, size_t &nodec, 
 	size_t maxNodesToProcess, 
 	std::string &out)
 {
@@ -794,8 +762,8 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	size_t nodesRemaining = nodes.size()-nodec;
 	if(maxNodesToProcess > nodesRemaining)
 		maxNodesToProcess = nodesRemaining;
-	if(maxNodesToProcess > this->optimalDenseNodes)
-		maxNodesToProcess = this->optimalDenseNodes;
+	if(maxNodesToProcess > std::max<size_t>(this->maxBlockObjects, 1))
+		maxNodesToProcess = std::max<size_t>(this->maxBlockObjects, 1);
 	const size_t startNodec = nodec;
 
 	OSMPBF::PrimitiveBlock pb;
@@ -806,7 +774,7 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
-	std::vector<const class OsmObject *> nodePtrs;
+	std::vector<const OsmObject *> nodePtrs;
 	for(size_t i=0; i<nodes.size(); i++)
 		nodePtrs.push_back(&nodes[i]);
 	std::map<std::string, int32_t> strIndex;
@@ -820,8 +788,8 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	while(nodec < stopIndex)
 	{
 		size_t nodesInGroup = stopIndex - nodec;
-		if(nodesInGroup > maxGroupObjects)
-			 nodesInGroup = maxGroupObjects;
+		if(nodesInGroup > std::max<size_t>(this->maxBlockObjects, 1))
+			 nodesInGroup = std::max<size_t>(this->maxBlockObjects, 1);
 
 		//Check if all tags are empty
 		//TODO
@@ -833,17 +801,17 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 			di = dn->mutable_denseinfo();
 
 		int64_t idc = 0, latc = 0, lonc = 0, timestampc = 0, changesetc = 0;
-		int32_t uidc = 0, user_sidc = 0;
+		int64_t uidc = 0, user_sidc = 0;
 		for(size_t i=nodec; i<nodec+nodesInGroup; i++)
 		{
-			const class OsmNode &n = nodes[i];
-			dn->add_id(n.objId-idc);
+			const OsmNode &n = nodes[i];
+			dn->add_id(WrapSub(n.objId, idc));
 			idc = n.objId;
-			int64_t lati = std::round((n.lat / 1e-9) - lat_offset) / granularity;
-			dn->add_lat(lati - latc);
+			int64_t lati = RoundCoord(((n.lat / 1e-9) - lat_offset) / granularity);
+			dn->add_lat(WrapSub(lati, latc));
 			latc = lati;
-			int64_t loni = std::round((n.lon / 1e-9) - lon_offset) / granularity;
-			dn->add_lon(loni - lonc);
+			int64_t loni = RoundCoord(((n.lon / 1e-9) - lon_offset) / granularity);
+			dn->add_lon(WrapSub(loni, lonc));
 			lonc = loni;
 
 			const TagMap &tags = n.tags;
@@ -856,13 +824,15 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 
 			if(this->encodeMetaData)
 			{
+				CheckPbfMetaData(n.metaData);
 				di->add_version(n.metaData.version);
-				int64_t ts = n.metaData.timestamp * 1000 / date_granularity;
-				di->add_timestamp(ts - timestampc);
+				int64_t ts = EncodeTimestamp(n.metaData.timestamp, date_granularity);
+				di->add_timestamp(WrapSub(ts, timestampc));
 				timestampc = ts;
-				di->add_changeset(n.metaData.changeset - changesetc);
+				di->add_changeset(WrapSub(n.metaData.changeset, changesetc));
 				changesetc = n.metaData.changeset;
-				di->add_uid(n.metaData.uid - uidc);
+				di->add_uid((int64_t)n.metaData.uid - uidc);
+				uidc = n.metaData.uid;
 				int32_t si = strIndex[n.metaData.username];
 				di->add_user_sid(si-user_sidc);
 				user_sidc = si;
@@ -878,10 +848,10 @@ void PbfEncodeBase::EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes,
 	pb.SerializeToString(&out);
 }
 
-void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNode> &nodes, size_t &nodec, std::string &out)
+void PbfEncode::EncodePbfDenseNodesSizeLimited(const std::vector<OsmNode> &nodes, size_t &nodec, std::string &out)
 {
 	const size_t startNodec = nodec;
-	uint32_t objLimit = this->optimalDenseNodes;
+	uint32_t objLimit = std::max<size_t>(this->maxBlockObjects, 1);
 	this->EncodePbfDenseNodes(nodes, nodec, objLimit, out);
 
 	while(out.size() > maxPayloadSize)
@@ -896,15 +866,15 @@ void PbfEncodeBase::EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNo
 	}
 }
 
-void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t &wayc, size_t maxWaysToProcess, 
+void PbfEncode::EncodePbfWays(const std::vector<OsmWay> &ways, size_t &wayc, size_t maxWaysToProcess, 
 	std::string &out)
 {
 	//Create string table
 	size_t waysRemaining = ways.size()-wayc;
 	if(maxWaysToProcess > waysRemaining)
 		maxWaysToProcess = waysRemaining;
-	if(maxWaysToProcess > this->optimalWays)
-		maxWaysToProcess = this->optimalWays;
+	if(maxWaysToProcess > std::max<size_t>(this->maxBlockObjects, 1))
+		maxWaysToProcess = std::max<size_t>(this->maxBlockObjects, 1);
 	const size_t startWayc = wayc;
 
 	OSMPBF::PrimitiveBlock pb;
@@ -912,7 +882,7 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
-	std::vector<const class OsmObject *> wayPtrs;
+	std::vector<const OsmObject *> wayPtrs;
 	for(size_t i=0; i<ways.size(); i++)
 		wayPtrs.push_back(&ways[i]);
 	std::map<std::string, int32_t> strIndex;
@@ -926,8 +896,8 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 	while(wayc < stopIndex)
 	{
 		size_t waysInGroup = stopIndex - wayc;
-		if(waysInGroup > maxGroupObjects)
-			 waysInGroup = maxGroupObjects;
+		if(waysInGroup > std::max<size_t>(this->maxBlockObjects, 1))
+			 waysInGroup = std::max<size_t>(this->maxBlockObjects, 1);
 
 		//Check if all tags are empty
 		//TODO
@@ -938,7 +908,7 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 		{
 			OSMPBF::Way *ow = pg->add_ways();
 
-			const class OsmWay &w = ways[i];
+			const OsmWay &w = ways[i];
 			const TagMap &tags = w.tags;
 			ow->set_id(w.objId);
 			for(auto it = tags.begin(); it != tags.end(); it++)
@@ -950,7 +920,7 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 			int64_t refc = 0;
 			for(size_t j=0; j<w.refs.size(); j++)
 			{
-				ow->add_refs(w.refs[j]-refc);
+				ow->add_refs(WrapSub(w.refs[j], refc));
 				refc = w.refs[j];
 			}
 
@@ -958,8 +928,9 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 			{
 				OSMPBF::Info *info = ow->mutable_info();
 
+				CheckPbfMetaData(w.metaData);
 				info->set_version(w.metaData.version);
-				info->set_timestamp(w.metaData.timestamp * 1000 / date_granularity);
+				info->set_timestamp(EncodeTimestamp(w.metaData.timestamp, date_granularity));
 				info->set_changeset(w.metaData.changeset);
 				info->set_uid(w.metaData.uid);
 				info->set_user_sid(strIndex[w.metaData.username]);
@@ -975,10 +946,10 @@ void PbfEncodeBase::EncodePbfWays(const std::vector<class OsmWay> &ways, size_t 
 	pb.SerializeToString(&out);
 }
 
-void PbfEncodeBase::EncodePbfWaysSizeLimited(const std::vector<class OsmWay> &ways, size_t &wayc, std::string &out)
+void PbfEncode::EncodePbfWaysSizeLimited(const std::vector<OsmWay> &ways, size_t &wayc, std::string &out)
 {
 	const size_t startWayc = wayc;
-	uint32_t objLimit = this->optimalWays;
+	uint32_t objLimit = std::max<size_t>(this->maxBlockObjects, 1);
 	this->EncodePbfWays(ways, wayc, objLimit, out);
 
 	while(out.size() > maxPayloadSize)
@@ -993,15 +964,15 @@ void PbfEncodeBase::EncodePbfWaysSizeLimited(const std::vector<class OsmWay> &wa
 	}
 }
 
-void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &relations, size_t &relationc, size_t maxRelationsToProcess, 
+void PbfEncode::EncodePbfRelations(const std::vector<OsmRelation> &relations, size_t &relationc, size_t maxRelationsToProcess, 
 	std::string &out)
 {
 	//Create string table
 	size_t relationsRemain = relations.size()-relationc;
 	if(maxRelationsToProcess > relationsRemain)
 		maxRelationsToProcess = relationsRemain;
-	if(maxRelationsToProcess > this->optimalRelations)
-		maxRelationsToProcess = this->optimalRelations;
+	if(maxRelationsToProcess > std::max<size_t>(this->maxBlockObjects, 1))
+		maxRelationsToProcess = std::max<size_t>(this->maxBlockObjects, 1);
 	const size_t startRelationc = relationc;
 
 	OSMPBF::PrimitiveBlock pb;
@@ -1009,7 +980,7 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 
 	OSMPBF::StringTable *st = pb.mutable_stringtable();
 
-	std::vector<const class OsmObject *> relPtrs;
+	std::vector<const OsmObject *> relPtrs;
 	for(size_t i=0; i<relations.size(); i++)
 		relPtrs.push_back(&relations[i]);
 	std::map<std::string, int32_t> strIndex;
@@ -1024,8 +995,8 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 	while(relationc < stopIndex and groupCountOk)
 	{
 		size_t relsInGroup = stopIndex - relationc;
-		if(relsInGroup > maxGroupObjects)
-			 relsInGroup = maxGroupObjects;
+		if(relsInGroup > std::max<size_t>(this->maxBlockObjects, 1))
+			 relsInGroup = std::max<size_t>(this->maxBlockObjects, 1);
 
 		//Check if all tags are empty
 		//TODO
@@ -1036,7 +1007,7 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 		{
 			OSMPBF::Relation *orl = pg->add_relations();
 
-			const class OsmRelation &r = relations[i];
+			const OsmRelation &r = relations[i];
 			const TagMap &tags = r.tags;
 			orl->set_id(r.objId);
 			for(auto it = tags.begin(); it != tags.end(); it++)
@@ -1046,19 +1017,18 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 			}
 
 			int64_t refc = 0;
-			for(size_t j=0; j<r.refTypeStrs.size() and j<r.refIds.size() and j<r.refRoles.size(); j++)
+			for(size_t j=0; j<r.members.size(); j++)
 			{
+				const RelationMember &member = r.members[j];
 				OSMPBF::Relation_MemberType mt=OSMPBF::Relation_MemberType_NODE;
-				if(r.refTypeStrs[j]=="way")
+				if(member.type == ObjectType::Way)
 					mt=OSMPBF::Relation_MemberType_WAY;
-				else if (r.refTypeStrs[j]=="relation")
+				else if(member.type == ObjectType::Relation)
 					mt=OSMPBF::Relation_MemberType_RELATION;
-				else if (r.refTypeStrs[j]!="node")
-					continue;
 
-				orl->add_roles_sid(strIndex[r.refRoles[j]]);
-				orl->add_memids(r.refIds[j]-refc);
-				refc = r.refIds[j];
+				orl->add_roles_sid(strIndex[member.role]);
+				orl->add_memids(WrapSub(member.ref, refc));
+				refc = member.ref;
 				orl->add_types(mt);
 			}
 
@@ -1066,8 +1036,9 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 			{
 				OSMPBF::Info *info = orl->mutable_info();
 
+				CheckPbfMetaData(r.metaData);
 				info->set_version(r.metaData.version);
-				info->set_timestamp(r.metaData.timestamp * 1000 / date_granularity);
+				info->set_timestamp(EncodeTimestamp(r.metaData.timestamp, date_granularity));
 				info->set_changeset(r.metaData.changeset);
 				info->set_uid(r.metaData.uid);
 				info->set_user_sid(strIndex[r.metaData.username]);
@@ -1083,10 +1054,10 @@ void PbfEncodeBase::EncodePbfRelations(const std::vector<class OsmRelation> &rel
 	pb.SerializeToString(&out);
 }
 
-void PbfEncodeBase::EncodePbfRelationsSizeLimited(const std::vector<class OsmRelation> &relations, size_t &relc, std::string &out)
+void PbfEncode::EncodePbfRelationsSizeLimited(const std::vector<OsmRelation> &relations, size_t &relc, std::string &out)
 {
 	const size_t startRelc = relc;
-	uint32_t objLimit = this->optimalRelations;
+	uint32_t objLimit = std::max<size_t>(this->maxBlockObjects, 1);
 	this->EncodePbfRelations(relations, relc, objLimit, out);
 
 	while(out.size() > maxPayloadSize)
@@ -1100,58 +1071,3 @@ void PbfEncodeBase::EncodePbfRelationsSizeLimited(const std::vector<class OsmRel
 			throw runtime_error("Failed to encode relations without breaking maxPayloadSize limit");
 	}
 }
-
-// *************************************
-
-PbfEncode::PbfEncode(std::streambuf &handleIn): PbfEncodeBase(), handle(&handleIn)
-{
-
-}
-
-PbfEncode::~PbfEncode()
-{
-
-}
-
-//*******************************************
-
-#ifdef PYTHON_AWARE
-
-PyPbfEncode::PyPbfEncode(PyObject* obj): PbfEncodeBase()
-{
-	m_PyObj = obj;
-	Py_INCREF(m_PyObj);
-	m_Write = PyObject_GetAttrString(m_PyObj, "write");
-}
-
-PyPbfEncode::~PyPbfEncode()
-{
-	Py_XDECREF(m_Write);
-	Py_XDECREF(m_PyObj);
-}
-
-void PyPbfEncode::write (const char* s, std::streamsize n)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
-	#endif 
-	Py_XDECREF(ret);
-}
-
-void PyPbfEncode::operator<< (const std::string &val)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
-	#endif 
-	Py_XDECREF(ret);
-}
-
-#endif //PYTHON_AWARE

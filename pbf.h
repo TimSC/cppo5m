@@ -1,120 +1,77 @@
-#ifndef _PBF_H
-#define _PBF_H
+#ifndef CPPO5M_PBF_H
+#define CPPO5M_PBF_H
 
-#include "OsmData.h"
-#include <iostream>
-#ifdef PYTHON_AWARE
-#include <Python.h>
-#endif
+#include <cstdint>
+#include <istream>
+#include <memory>
+#include <string>
+#include <vector>
+#include "decoder.h"
+#include "encoder.h"
+#include "model.h"
 
-///Decodes a binary PBF stream and fires a series of events to the output object derived from IDataStreamHandler
+///Decodes an OSM PBF stream. Each call to DecodeNext handles one blob.
 class PbfDecode : public OsmDecoder
 {
-protected:
+private:
 	std::istream handle;
-	std::string prevObjType;
+	bool anyObject;
+	ObjectType prevObjType;
 
-	bool DecodeOsmData(std::string &decBlob);
-	bool CheckOutputType(const char *objType);
+	void DecodeOsmData(const std::string &decBlob);
+	void CheckOutputType(ObjectType objType);
 
 public:
-	PbfDecode(std::streambuf &handleIn);
-	virtual ~PbfDecode();
+	PbfDecode(std::streambuf &input, IDataStreamHandler &output);
 
-	bool DecodeNext();
-	void DecodeFinish();
+	bool DecodeNext() override;
 };
 
-
-///Encodes a stream of map objects into an Pbf output binary stream
-class PbfEncodeBase : public IDataStreamHandler
+///Encodes a stream of map objects as OSM PBF. Objects are collected into
+///blocks of one type, so output appears when the object type changes, when a
+///block fills, and on Finish.
+class PbfEncode : public OsmEncoder
 {
-protected:
-
-	virtual void write (const char* s, std::streamsize n);
-	virtual void operator<< (const std::string &val);
-	class OsmData buffer;
-	std::string prevObjType;
+private:
+	OsmData buffer;
+	bool anyObject;
+	ObjectType prevObjType;
 	bool headerWritten;
-	uint32_t maxPayloadSize, maxHeaderSize, optimalDenseNodes, optimalWays, optimalRelations;
+	uint32_t maxPayloadSize, maxHeaderSize;
 
+	void BeforeStore(ObjectType objType, size_t buffered);
 	void EncodeBuffer();
 	void EncodeHeaderBlock(std::string &out);
-	void EncodePbfDenseNodes(const std::vector<class OsmNode> &nodes, size_t &nodec, size_t maxNodesToProcess, 
+	void EncodePbfDenseNodes(const std::vector<OsmNode> &nodes, size_t &nodec, size_t maxNodesToProcess,
 		std::string &out);
-	void EncodePbfWays(const std::vector<class OsmWay> &ways, size_t &wayc, size_t maxWaysToProcess, 
+	void EncodePbfWays(const std::vector<OsmWay> &ways, size_t &wayc, size_t maxWaysToProcess,
 		std::string &out);
-	void EncodePbfRelations(const std::vector<class OsmRelation> &relations, size_t &relationc, size_t maxRelsToProcess, 
+	void EncodePbfRelations(const std::vector<OsmRelation> &relations, size_t &relationc, size_t maxRelsToProcess,
 		std::string &out);
-
-	void EncodePbfDenseNodesSizeLimited(const std::vector<class OsmNode> &nodes, size_t &nodec, std::string &out);
-	void EncodePbfWaysSizeLimited(const std::vector<class OsmWay> &ways, size_t &wayc, std::string &out);
-	void EncodePbfRelationsSizeLimited(const std::vector<class OsmRelation> &relations, size_t &relc, std::string &out);
-
+	void EncodePbfDenseNodesSizeLimited(const std::vector<OsmNode> &nodes, size_t &nodec, std::string &out);
+	void EncodePbfWaysSizeLimited(const std::vector<OsmWay> &ways, size_t &wayc, std::string &out);
+	void EncodePbfRelationsSizeLimited(const std::vector<OsmRelation> &relations, size_t &relc, std::string &out);
 	void WriteBlobPayload(const std::string &blobPayload, const char *type);
 
 public:
-	PbfEncodeBase();
-	virtual ~PbfEncodeBase();
+	explicit PbfEncode(std::shared_ptr<ByteSink> sink);
+	///Writes to a stream buffer, which must outlive the encoder.
+	explicit PbfEncode(std::streambuf &output);
 
-	bool Sync();
-	bool Reset();
-	bool Finish();
+	void StoreBounds(const Bounds &bounds) override;
+	void StoreNode(const OsmNode &node) override;
+	void StoreWay(const OsmWay &way) override;
+	void StoreRelation(const OsmRelation &relation) override;
+	void Finish() override;
 
-	bool StoreIsDiff(bool);
-	bool StoreBounds(double x1, double y1, double x2, double y2);
-	bool StoreNode(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, double lat, double lon);
-	bool StoreWay(int64_t objId, const class MetaData &metaData, 
-		const TagMap &tags, const std::vector<int64_t> &refs);
-	bool StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
-		const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds, 
-		const std::vector<std::string> &refRoles);
-
+	//Settings; change them before the first object is stored
 	bool encodeMetaData, encodeHistorical, compressUsingZLib;
-	size_t maxGroupObjects;
+	///Objects per block. The format recommends no more than 8000, and this is
+	///also how many objects the encoder holds in memory at once.
+	size_t maxBlockObjects;
 	std::string writingProgram;
 	int32_t granularity, date_granularity;
 	int64_t lat_offset, lon_offset;
 };
 
-class PbfEncode : public PbfEncodeBase
-{
-private:
-	std::ostream handle;
-
-protected:
-	virtual void write (const char* s, std::streamsize n)
-	{
-		this->handle.write(s, n);
-	}
-
-	virtual void operator<< (const std::string &val)
-	{
-		this->handle << val;
-	}
-
-public:
-	PbfEncode(std::streambuf &handle);
-	virtual ~PbfEncode();
-};
-
-#ifdef PYTHON_AWARE
-class PyPbfEncode : public PbfEncodeBase
-{
-private:
-	PyObject* m_PyObj;
-	PyObject* m_Write;
-
-protected:
-	virtual void write (const char* s, std::streamsize n);
-	virtual void operator<< (const std::string &val);
-
-public:
-	PyPbfEncode(PyObject* obj);
-	virtual ~PyPbfEncode();	
-
-};
-#endif //PYTHON_AWARE
-
-#endif //_PBF_H
+#endif //CPPO5M_PBF_H

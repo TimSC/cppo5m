@@ -1,132 +1,70 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <stdexcept>
+#include "varint.h"
 #include <sstream>
-#include <iostream>
-
-const int INTERNAL_BUFF_SIZE = 16;
-
-// ****** Varint and zigzag encodings ******
+#include <stdexcept>
 
 uint64_t DecodeVarint(std::istream &str)
 {
-	unsigned contin = 1;
-	size_t offset = 0;
 	uint64_t total = 0;
-	while (contin) {
-		int rawBuff = str.get();
-		if(rawBuff==std::char_traits<char>::eof())
-			throw std::runtime_error("End of file in DecodeVarint");
-		if(str.fail())
-			throw std::runtime_error("DecodeVarint: read result has unexpected length");
-
-		char valc = (char)rawBuff;
-		uint64_t val = *(unsigned char *)(&valc);
-		contin = (val & 0x80) != 0;
-		if(offset >= 64)
-			throw std::runtime_error("Varint too long");
-		total += (val & 0x7f) << offset;
+	unsigned offset = 0;
+	while(true)
+	{
+		int raw = str.get();
+		if(raw == std::char_traits<char>::eof())
+			throw std::runtime_error("End of input inside a varint");
+		uint64_t val = (unsigned char)raw;
+		//The tenth byte may only carry the one remaining bit
+		if(offset >= 64 || (offset == 63 && (val & 0x7e) != 0))
+			throw std::runtime_error("Varint is too long");
+		total |= (val & 0x7f) << offset;
+		if((val & 0x80) == 0)
+			return total;
 		offset += 7;
 	}
-
-	return total;
 }
 
-uint64_t DecodeVarint(const char *str)
+uint64_t DecodeVarint(const std::string &str)
 {
-	std::stringstream test(str);
-	std::istringstream ss(test.str());
+	std::istringstream ss(str);
 	return DecodeVarint(ss);
 }
 
 int64_t DecodeZigzag(std::istream &str)
 {
-	unsigned char contin = 1;
-	uint64_t offset = 0;
-	uint64_t total = 0;
-	while (contin) {
-		int rawBuff = str.get();
-		if(rawBuff==std::char_traits<char>::eof())
-			throw std::runtime_error("End of file in DecodeZigzag");
-		if(str.fail())
-			throw std::runtime_error("DecodeZigzag read result has unexpected length");
-
-		char valc = (char)rawBuff;
-		uint64_t val = *(unsigned char *)(&valc);
-		contin = (val & 0x80) != 0;
-		if(offset >= 64)
-			throw std::runtime_error("Zigzag varint too long");
-		total += (val & 0x7f) << offset;
-		offset += 7;
-	}
-
-	return (total >> 1) ^ (-(total & 1));
+	uint64_t zz = DecodeVarint(str);
+	return (int64_t)(zz >> 1) ^ -(int64_t)(zz & 1);
 }
 
-int64_t DecodeZigzag(const char *str)
+int64_t DecodeZigzag(const std::string &str)
 {
-	std::stringstream test(str);
-	std::istringstream ss(test.str());
+	std::istringstream ss(str);
 	return DecodeZigzag(ss);
 }
 
-void EncodeVarint(uint64_t val, std::string &out)
+void AppendVarint(uint64_t val, std::string &out)
 {
-	out.resize(INTERNAL_BUFF_SIZE);
-	unsigned char more = 1;
-	unsigned int cursor = 0;
-	
-	while (more) {
-		unsigned char sevenBits = val & 0x7f;
-		val = val >> 7;
-		more = val != 0;
-		if(cursor < INTERNAL_BUFF_SIZE) {
-			out[cursor] = (more << 7) + sevenBits;
-			cursor ++;	
-		}
-		else
-			throw std::runtime_error("Internal buffer overflow while encoding varint");
+	while(val >= 0x80)
+	{
+		out.push_back((char)((val & 0x7f) | 0x80));
+		val >>= 7;
 	}
+	out.push_back((char)val);
+}
 
-	out.resize(cursor);
+void AppendZigzag(int64_t val, std::string &out)
+{
+	AppendVarint(((uint64_t)val << 1) ^ (uint64_t)(val >> 63), out);
 }
 
 std::string EncodeVarint(uint64_t val)
 {
 	std::string out;
-	EncodeVarint(val, out);
+	AppendVarint(val, out);
 	return out;
-}
-
-void EncodeZigzag(int64_t val, std::string &out)
-{
-	out.resize(INTERNAL_BUFF_SIZE);
-	unsigned char more = 1;
-	unsigned int cursor = 0;
-	uint64_t zz = 0;
-
-	zz = (val << 1) ^ (val >> (sizeof(int64_t)*8-1));
-
-	while (more) {
-		unsigned char sevenBits = zz & 0x7f;
-		zz = zz >> 7;
-		more = zz != 0;
-		if(cursor < INTERNAL_BUFF_SIZE) {
-			out[cursor] = (more << 7) + sevenBits;
-			cursor ++;	
-		}
-		else
-			throw std::runtime_error("Internal buffer overflow while encoding varint");
-	}
-
-	out.resize(cursor);	
 }
 
 std::string EncodeZigzag(int64_t val)
 {
 	std::string out;
-	EncodeZigzag(val, out);
+	AppendZigzag(val, out);
 	return out;
 }
-
-

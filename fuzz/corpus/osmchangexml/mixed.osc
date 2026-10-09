@@ -1,0 +1,1 @@
+<osmChange version='0.6'><modify><way id='5' version='2' changeset='1'><nd ref='1'/><nd ref='2'/><tag k='a' v='b'/></way></modify><delete if-unused='true'><relation id='7' version='3'><member type='way' ref='5' role='outer'/></relation><node id='1' version='2' lat='1.5' lon='2.5'/></delete></osmChange>

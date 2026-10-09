@@ -1,4 +1,4 @@
-#include "fixeddeque.h"
+#include "../fixeddeque.h"
 #include <assert.h>
 #include <iostream>
 #include <stdexcept>
@@ -10,17 +10,17 @@ int main()
 	int cap = 5;
 	d.SetBufferSize(cap);
 	int s = 0;
-        assert(d.Size()==s);
-        assert(d.Size()+d.AvailableSpace()==cap);
+        assert((int)d.Size()==s);
+        assert((int)d.Size()+(int)d.AvailableSpace()==cap);
 
 	//Fill the deque
 	for(int i=0;i<cap;i++)
 	{
 		d.PushBack(i);
 		s++;
-		//cout << d.Size() << "," << s << endl;
-		assert(d.Size()==s);
-		assert(d.Size()+d.AvailableSpace()==cap);
+		//cout << (int)d.Size() << "," << s << endl;
+		assert((int)d.Size()==s);
+		assert((int)d.Size()+(int)d.AvailableSpace()==cap);
 	}
 
 	//Check data
@@ -46,8 +46,8 @@ int main()
 		if (rep == 0)
 			assert(val == i);
 		s--;
-		assert(d.Size()==s);
-                assert(d.Size()+d.AvailableSpace()==cap);
+		assert((int)d.Size()==s);
+                assert((int)d.Size()+(int)d.AvailableSpace()==cap);
 	}
 
 	//Fill the deque
@@ -55,13 +55,13 @@ int main()
         {
                 d.PushBack(i);
                 s++;
-                //cout << d.Size() << "," << s << endl;
+                //cout << (int)d.Size() << "," << s << endl;
 		//d.Debug();
-                assert(d.Size()==s);
-                assert(d.Size()+d.AvailableSpace()==cap);
+                assert((int)d.Size()==s);
+                assert((int)d.Size()+(int)d.AvailableSpace()==cap);
         }
 
-	//for(int i=0;i<d.Size();i++)
+	//for(int i=0;i<(int)d.Size();i++)
 	//	cout << "val"<<i<<"=" << d[i] << endl;
 
         //Check data

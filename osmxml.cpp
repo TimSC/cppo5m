@@ -1,34 +1,15 @@
 #include "osmxml.h"
-#include <sstream>
-#include <ctime>
-#include <assert.h>
+#include <climits>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
-#include <limits>
+#include <ctime>
+#include <expat.h>
 extern "C" {
 #include "iso8601lib/iso8601.h"
 }
 using namespace std;
-
-static thread_local class OsmXmlLimits defaultOsmXmlLimits;
-
-static std::string LimitMessage(const std::string &name, size_t limit, size_t actual)
-{
-	stringstream ss;
-	ss << name << " limit exceeded; maximum is " << limit << ", got " << actual;
-	return ss.str();
-}
-
-OsmXmlLimits::OsmXmlLimits()
-{
-	maxBytes = 0;
-	maxDepth = 0;
-	maxObjects = 0;
-	maxTagsPerObject = 0;
-	maxWayNodesPerObject = 0;
-	maxRelationMembersPerObject = 0;
-	maxAttributesPerElement = 0;
-	maxAttributeBytes = 0;
-}
 
 void OsmXmlLimits::Apply(const std::map<std::string, int64_t> &limitsIn)
 {
@@ -64,418 +45,505 @@ void OsmXmlLimits::Apply(const std::map<std::string, int64_t> &limitsIn)
 	}
 }
 
-void SetDefaultOsmXmlLimits(const class OsmXmlLimits &limits)
-{
-	defaultOsmXmlLimits = limits;
-}
-
-class OsmXmlLimits GetDefaultOsmXmlLimits()
-{
-	return defaultOsmXmlLimits;
-}
-
-// ********* Utility classes ***********
-
-// https://stackoverflow.com/a/9907752/4288232
-std::string escapexml(const std::string& src) {
-	std::stringstream dst;
-	for (size_t i=0; i<src.size(); i++)
-	{
-		char ch = src[i];
-		switch (ch) {
-			case '&': dst << "&amp;"; break;
-			case '\'': dst << "&apos;"; break;
-			case '"': dst << "&quot;"; break;
-			case '<': dst << "&lt;"; break;
-			case '>': dst << "&gt;"; break;
-			case '\n': dst << "&#10;"; break;
-			default: dst << ch; break;
-		}
-	}
-	return dst.str();
-}
-
-void XmlAttsToMap(const XML_Char **atts, std::map<std::string, std::string> &attribs)
-{
-	size_t i=0;
-	while(atts[i] != NULL)
-	{
-		attribs[atts[i]] = atts[i+1];
-		i += 2;
-	}
-}
-
-static void StartElement(void *userData, const XML_Char *name, const XML_Char **atts)
-{
-	((class OsmXmlDecodeString *)userData)->StartElement(name, atts);
-}
-
-static void EndElement(void *userData, const XML_Char *name)
-{
-	((class OsmXmlDecodeString *)userData)->EndElement(name);
-}
-
-static void StartChangeElement(void *userData, const XML_Char *name, const XML_Char **atts)
-{
-	((class OsmChangeXmlDecodeString *)userData)->StartElement(name, atts);
-}
-
-static void EndChangeElement(void *userData, const XML_Char *name)
-{
-	((class OsmChangeXmlDecodeString *)userData)->EndElement(name);
-}
-
-// ************* Decoder *************
-
-OsmXmlDecodeString::OsmXmlDecodeString() : OsmDecoder()
-{
-	xmlDepth = 0;
-	parseCompleted = false;
-	parseCompletedOk = false;
-	parser = XML_ParserCreate(NULL);
-	XML_SetUserData(parser, this);
-	XML_SetElementHandler(parser, ::StartElement, ::EndElement);
-	this->firstParseCall = true;
-	stopProcessing = false;
-	limits = GetDefaultOsmXmlLimits();
-	bytesDecoded = 0;
-	objectCount = 0;
-	tagCount = 0;
-	wayNodeCount = 0;
-	relationMemberCount = 0;
-}
-
-OsmXmlDecodeString::~OsmXmlDecodeString()
-{
-	if(!this->parseCompleted)
-		this->DecodeFinish();
-	XML_ParserFree(parser);
-}
-
-void OsmXmlDecodeString::SetLimits(const class OsmXmlLimits &limitsIn)
-{
-	limits = limitsIn;
-}
-
-bool OsmXmlDecodeString::FailLimit(const std::string &message)
-{
-	errString = message;
-	stopProcessing = true;
-	XML_StopParser(parser, XML_FALSE);
-	return false;
-}
-
-bool OsmXmlDecodeString::CheckLimit(size_t value, size_t limit, const std::string &message)
+static void CheckLimit(const char *name, size_t value, size_t limit)
 {
 	if(limit > 0 && value > limit)
-		return FailLimit(message);
-	return true;
+		throw OsmLimitError(name, limit, value);
 }
 
-bool OsmXmlDecodeString::CheckElementLimits(const XML_Char *name, const XML_Char **atts)
+static const char *FindAttrib(const char **atts, const char *name)
 {
+	for(size_t i=0; atts[i] != nullptr; i += 2)
+		if(strcmp(atts[i], name) == 0)
+			return atts[i+1];
+	return nullptr;
+}
+
+// ************* Expat plumbing *************
+
+XmlPushParser::XmlPushParser(const OsmXmlLimits &limitsIn) :
+	parser(XML_ParserCreate(nullptr)),
+	bytesFed(0),
+	begun(false),
+	complete(false),
+	failed(false),
+	limits(limitsIn),
+	depth(0)
+{
+	if(this->parser == nullptr)
+		throw std::bad_alloc();
+	XML_SetUserData(this->parser, this);
+	XML_SetElementHandler(this->parser, XmlPushParser::StartCallback, XmlPushParser::EndCallback);
+}
+
+XmlPushParser::~XmlPushParser()
+{
+	XML_ParserFree(this->parser);
+}
+
+// Expat is C code, so exceptions must not unwind through it. The callbacks
+// keep the first exception, stop the parser, and Feed rethrows it.
+
+void XmlPushParser::StartCallback(void *userData, const char *name, const char **atts)
+{
+	XmlPushParser *self = (XmlPushParser *)userData;
+	if(self->pending)
+		return;
+	try
+	{
+		self->depth ++;
+		CheckLimit("maxDepth", self->depth, self->limits.maxDepth);
+		self->CheckElementLimits(name, atts);
+		self->OnStartElement(name, atts);
+	}
+	catch(...)
+	{
+		self->pending = std::current_exception();
+		XML_StopParser(self->parser, XML_FALSE);
+	}
+}
+
+void XmlPushParser::EndCallback(void *userData, const char *name)
+{
+	XmlPushParser *self = (XmlPushParser *)userData;
+	if(self->pending)
+		return;
+	try
+	{
+		self->OnEndElement(name);
+		self->depth --;
+	}
+	catch(...)
+	{
+		self->pending = std::current_exception();
+		XML_StopParser(self->parser, XML_FALSE);
+	}
+}
+
+void XmlPushParser::CheckElementLimits(const char *name, const char **atts)
+{
+	if(limits.maxAttributesPerElement == 0 && limits.maxAttributeBytes == 0)
+		return;
 	size_t attributeCount = 0;
 	size_t attributeBytes = strlen(name);
-	for(size_t i=0; atts[i] != NULL; i += 2)
+	for(size_t i=0; atts[i] != nullptr; i += 2)
 	{
 		attributeCount++;
 		attributeBytes += strlen(atts[i]) + strlen(atts[i+1]);
 	}
-
-	if(!CheckLimit(attributeCount, limits.maxAttributesPerElement,
-		LimitMessage("PGMAP_XML_MAX_ATTRIBUTES_PER_ELEMENT", limits.maxAttributesPerElement, attributeCount)))
-		return false;
-	if(!CheckLimit(attributeBytes, limits.maxAttributeBytes,
-		LimitMessage("PGMAP_XML_MAX_ATTRIBUTE_BYTES", limits.maxAttributeBytes, attributeBytes)))
-		return false;
-	return true;
+	CheckLimit("maxAttributesPerElement", attributeCount, limits.maxAttributesPerElement);
+	CheckLimit("maxAttributeBytes", attributeBytes, limits.maxAttributeBytes);
 }
 
-void OsmXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
+void XmlPushParser::Feed(const char *data, size_t len, bool final)
 {
-	this->xmlDepth ++;
-	//cout << this->xmlDepth << " startel " << name << endl;
+	if(this->failed)
+		throw OsmDecodeError("XML parser cannot continue after an earlier error");
+	if(this->complete)
+		throw OsmDecodeError("XML document is already complete");
 
-	if(!CheckLimit(this->xmlDepth, limits.maxDepth,
-		LimitMessage("PGMAP_XML_MAX_DEPTH", limits.maxDepth, this->xmlDepth)))
+	try
+	{
+		if(!this->begun)
+		{
+			this->begun = true;
+			this->OnBegin();
+		}
+
+		if(len > SIZE_MAX - this->bytesFed)
+			throw OsmLimitError("maxBytes", limits.maxBytes, SIZE_MAX);
+		this->bytesFed += len;
+		CheckLimit("maxBytes", this->bytesFed, limits.maxBytes);
+
+		//Expat takes an int length, so pass very large buffers in pieces
+		const size_t maxPiece = 1 << 30;
+		size_t offset = 0;
+		do
+		{
+			size_t piece = len - offset;
+			if(piece > maxPiece)
+				piece = maxPiece;
+			bool last = final && offset + piece == len;
+			XML_Status status = XML_Parse(this->parser, data + offset, (int)piece, last);
+			if(this->pending)
+				std::rethrow_exception(this->pending);
+			if(status == XML_STATUS_ERROR)
+			{
+				std::string message = "XML error: ";
+				message += XML_ErrorString(XML_GetErrorCode(this->parser));
+				message += " at line " + std::to_string(XML_GetCurrentLineNumber(this->parser));
+				throw OsmDecodeError(message);
+			}
+			offset += piece;
+		}
+		while(offset < len);
+
+		if(final)
+		{
+			this->complete = true;
+			this->OnComplete();
+		}
+	}
+	catch(...)
+	{
+		this->failed = true;
+		this->pending = nullptr;
+		throw;
+	}
+}
+
+// ************* Object elements *************
+
+static int64_t ParseInt(const char *text)
+{
+	return strtoll(text, nullptr, 10);
+}
+
+///Parses a latitude or longitude. Text that is not a number reads as zero, as
+///before, but infinities and NaN are refused: no format can store them.
+static double ParseCoord(const char *text)
+{
+	double value = strtod(text, nullptr);
+	if(!std::isfinite(value))
+		throw OsmDecodeError(std::string("Invalid coordinate: ") + text);
+	return value;
+}
+
+static int64_t ParseTimestamp(const char *text)
+{
+	struct tm dt;
+	memset(&dt, 0, sizeof(dt));
+	int timezoneOffsetMin = 0;
+	if(!ParseIso8601Datetime(text, &dt, &timezoneOffsetMin))
+		throw OsmDecodeError(std::string("Invalid timestamp: ") + text);
+	TmToUtc(&dt, timezoneOffsetMin);
+	return (int64_t)timegm(&dt);
+}
+
+OsmXmlObjectReader::OsmXmlObjectReader(const OsmXmlLimits &limitsIn) :
+	limits(limitsIn),
+	active(false),
+	type(ObjectType::Node),
+	objectCount(0),
+	tagCount(0)
+{
+
+}
+
+bool OsmXmlObjectReader::IsObject(const char *name)
+{
+	return strcmp(name, "node") == 0 || strcmp(name, "way") == 0 || strcmp(name, "relation") == 0;
+}
+
+OsmObject &OsmXmlObjectReader::Current()
+{
+	switch(this->type)
+	{
+	case ObjectType::Way: return this->way;
+	case ObjectType::Relation: return this->relation;
+	default: return this->node;
+	}
+}
+
+void OsmXmlObjectReader::StartObject(const char *name, const char **atts)
+{
+	this->objectCount ++;
+	CheckLimit("maxObjects", this->objectCount, limits.maxObjects);
+
+	this->type = ObjectTypeFromName(name);
+	this->active = true;
+	this->tagCount = 0;
+	this->node.lat = 0.0;
+	this->node.lon = 0.0;
+	this->way.refs.clear();
+	this->relation.members.clear();
+
+	OsmObject &obj = this->Current();
+	obj.objId = 0;
+	obj.metaData = MetaData();
+	obj.tags.clear();
+
+	for(size_t i=0; atts[i] != nullptr; i += 2)
+	{
+		const char *key = atts[i];
+		const char *value = atts[i+1];
+		if(strcmp(key, "id") == 0)
+			obj.objId = ParseInt(value);
+		else if(strcmp(key, "version") == 0)
+			obj.metaData.version = ParseInt(value);
+		else if(strcmp(key, "timestamp") == 0)
+			obj.metaData.timestamp = ParseTimestamp(value);
+		else if(strcmp(key, "changeset") == 0)
+			obj.metaData.changeset = ParseInt(value);
+		else if(strcmp(key, "uid") == 0)
+			obj.metaData.uid = ParseInt(value);
+		else if(strcmp(key, "user") == 0)
+			obj.metaData.username = value;
+		else if(strcmp(key, "visible") == 0)
+			obj.metaData.visible = strcmp(value, "false") != 0;
+		else if(strcmp(key, "current") == 0)
+			obj.metaData.current = strcmp(value, "false") != 0;
+		else if(this->type == ObjectType::Node && strcmp(key, "lat") == 0)
+			this->node.lat = ParseCoord(value);
+		else if(this->type == ObjectType::Node && strcmp(key, "lon") == 0)
+			this->node.lon = ParseCoord(value);
+	}
+}
+
+void OsmXmlObjectReader::StartChild(const char *name, const char **atts)
+{
+	if(!this->active)
 		return;
-	if(!CheckElementLimits(name, atts))
+
+	if(strcmp(name, "tag") == 0)
+	{
+		this->tagCount ++;
+		CheckLimit("maxTagsPerObject", this->tagCount, limits.maxTagsPerObject);
+		const char *k = FindAttrib(atts, "k");
+		const char *v = FindAttrib(atts, "v");
+		this->Current().tags[k ? k : ""] = v ? v : "";
+	}
+	else if(strcmp(name, "nd") == 0 && this->type == ObjectType::Way)
+	{
+		CheckLimit("maxWayNodesPerObject", this->way.refs.size() + 1, limits.maxWayNodesPerObject);
+		const char *ref = FindAttrib(atts, "ref");
+		this->way.refs.push_back(ref ? ParseInt(ref) : 0);
+	}
+	else if(strcmp(name, "member") == 0 && this->type == ObjectType::Relation)
+	{
+		CheckLimit("maxRelationMembersPerObject", this->relation.members.size() + 1,
+			limits.maxRelationMembersPerObject);
+		const char *memberType = FindAttrib(atts, "type");
+		const char *ref = FindAttrib(atts, "ref");
+		const char *role = FindAttrib(atts, "role");
+
+		RelationMember member;
+		if(memberType == nullptr || !ObjectTypeFromName(memberType, member.type))
+			throw OsmDecodeError(std::string("Relation member has an unknown type: ") +
+				(memberType ? memberType : ""));
+		member.ref = ref ? ParseInt(ref) : 0;
+		if(role != nullptr)
+			member.role = role;
+		this->relation.members.push_back(member);
+	}
+}
+
+void OsmXmlObjectReader::EndObject(IDataStreamHandler &output)
+{
+	if(!this->active)
 		return;
+	this->active = false;
+	this->Current().StreamTo(output);
+}
 
-	std::map<std::string, std::string> attribs;
-	XmlAttsToMap(atts, attribs);
+// ************* OSM XML parser *************
 
-	if(this->xmlDepth == 2)
+OsmXmlParser::OsmXmlParser(IDataStreamHandler &outputIn, const OsmXmlLimits &limitsIn) :
+	XmlPushParser(limitsIn),
+	output(outputIn),
+	reader(this->limits),
+	inObject(false),
+	anyObject(false),
+	lastType(ObjectType::Node)
+{
+
+}
+
+void OsmXmlParser::OnBegin()
+{
+	this->output.StoreIsDiff(false);
+}
+
+void OsmXmlParser::OnStartElement(const char *name, const char **atts)
+{
+	if(this->depth == 1)
 	{
-		this->currentObjectType = name;
-		this->metadataMap = attribs;
-		tagCount = 0;
-		wayNodeCount = 0;
-		relationMemberCount = 0;
-		if(strcmp(name, "node") == 0 || strcmp(name, "way") == 0 || strcmp(name, "relation") == 0)
-		{
-			objectCount++;
-			if(!CheckLimit(objectCount, limits.maxObjects,
-				LimitMessage("CHANGESETS_MAXIMUM_ELEMENTS", limits.maxObjects, objectCount)))
-				return;
-		}
+		if(strcmp(name, "osm") != 0)
+			throw OsmDecodeError(std::string("Expected an osm root element but found ") + name);
 	}
-
-	else if(this->xmlDepth == 3)
+	else if(this->depth == 2)
 	{
-		if(strcmp(name, "tag") == 0)
+		if(OsmXmlObjectReader::IsObject(name))
 		{
-			tagCount++;
-			if(!CheckLimit(tagCount, limits.maxTagsPerObject,
-				LimitMessage("PGMAP_XML_MAX_TAGS_PER_OBJECT", limits.maxTagsPerObject, tagCount)))
-				return;
-			this->tags[attribs["k"]] = attribs["v"];
+			this->reader.StartObject(name, atts);
+			this->inObject = true;
 		}
-		if(strcmp(name, "nd") == 0 && currentObjectType == "way")
+		else if(strcmp(name, "bounds") == 0)
 		{
-			wayNodeCount++;
-			if(!CheckLimit(wayNodeCount, limits.maxWayNodesPerObject,
-				LimitMessage("WAYNODES_MAXIMUM", limits.maxWayNodesPerObject, wayNodeCount)))
-				return;
-			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
+			Bounds bounds;
+			const char *value = FindAttrib(atts, "minlon");
+			if(value) bounds.minLon = ParseCoord(value);
+			value = FindAttrib(atts, "minlat");
+			if(value) bounds.minLat = ParseCoord(value);
+			value = FindAttrib(atts, "maxlon");
+			if(value) bounds.maxLon = ParseCoord(value);
+			value = FindAttrib(atts, "maxlat");
+			if(value) bounds.maxLat = ParseCoord(value);
+			this->output.StoreBounds(bounds);
 		}
-		if(strcmp(name, "member") == 0 && currentObjectType == "relation")
-		{
-			relationMemberCount++;
-			if(!CheckLimit(relationMemberCount, limits.maxRelationMembersPerObject,
-				LimitMessage("RELATION_MEMBERS_MAXIMUM", limits.maxRelationMembersPerObject, relationMemberCount)))
-				return;
-			this->memObjIds.push_back(atol(attribs["ref"].c_str()));
-			this->memObjTypes.push_back(attribs["type"]);
-			this->memObjRoles.push_back(attribs["role"]);
-		}
+		//Other elements, such as note and meta, are skipped along with their children
+	}
+	else if(this->depth == 3 && this->inObject)
+	{
+		this->reader.StartChild(name, atts);
 	}
 }
 
-void OsmXmlDecodeString::EndElement(const XML_Char *name)
+void OsmXmlParser::OnEndElement(const char *name)
 {
-	//cout << this->xmlDepth << " endel " << name << endl;
-	
-	if(this->xmlDepth == 2)
-	{	
-		if(this->currentObjectType == "bounds")
-		{
-			double minlat=0.0, minlon=0.0, maxlat=0.0, maxlon=0.0;
-
-			TagMap::iterator it = this->metadataMap.find("minlat");
-			if(it != this->metadataMap.end())
-				minlat = atof(it->second.c_str());
-			it = this->metadataMap.find("minlon");
-			if(it != this->metadataMap.end())
-				minlon = atof(it->second.c_str());
-			it = this->metadataMap.find("maxlat");
-			if(it != this->metadataMap.end())
-				maxlat = atof(it->second.c_str());
-			it = this->metadataMap.find("maxlon");
-			if(it != this->metadataMap.end())
-				maxlon = atof(it->second.c_str());
-
-			if(output != nullptr)
-				stopProcessing |= output->StoreBounds(minlon, minlat, maxlon, maxlat);
-		}
-		else
-		{
-			if(this->lastObjectType != this->currentObjectType && output != nullptr)
-			{
-				stopProcessing |= output->Sync();
-				stopProcessing |= output->Reset();
-			}
-
-			int64_t objId = 0;
-			TagMap::iterator it = this->metadataMap.find("id");
-			if(it != this->metadataMap.end())
-				objId = atol(it->second.c_str());
-
-			class MetaData metaData;
-			DecodeMetaData(metaData);
-
-			if(this->currentObjectType == "node")
-			{
-				double lat = 0.0, lon = 0.0;
-				it = this->metadataMap.find("lat");
-				if(it != this->metadataMap.end())
-					lat = atof(it->second.c_str());
-				it = this->metadataMap.find("lon");
-				if(it != this->metadataMap.end())
-					lon = atof(it->second.c_str());
-
-				if(output != nullptr)
-					stopProcessing |= output->StoreNode(objId, metaData, this->tags, lat, lon);
-			}
-			else if(this->currentObjectType == "way")
-			{
-				if(output != nullptr)
-					stopProcessing |= output->StoreWay(objId, metaData, this->tags, this->memObjIds);
-			}
-			else if(this->currentObjectType == "relation")
-			{
-				if(output != nullptr)
-					stopProcessing |= output->StoreRelation(objId, metaData, this->tags, 
-						this->memObjTypes, this->memObjIds, this->memObjRoles);
-			}
-
-			this->lastObjectType = this->currentObjectType;
-		}
-
-		//Clear data ready for further processing
-		this->currentObjectType = "";
-		this->metadataMap.clear();
-		this->tags.clear();
-		this->memObjIds.clear();
-		this->memObjTypes.clear();
-		this->memObjRoles.clear();
+	if(this->depth == 2 && this->inObject)
+	{
+		this->inObject = false;
+		//Some encoders need to know when the object type changes
+		if(this->anyObject && this->reader.Type() != this->lastType)
+			this->output.Reset();
+		this->anyObject = true;
+		this->lastType = this->reader.Type();
+		this->reader.EndObject(this->output);
 	}
-
-	this->xmlDepth --;
 }
 
-void OsmXmlDecodeString::DecodeMetaData(class MetaData &metaData)
+void OsmXmlParser::OnComplete()
 {
-	TagMap::iterator it = this->metadataMap.find("version");
-	if(it != this->metadataMap.end())
-		metaData.version = atol(it->second.c_str());
-	it = this->metadataMap.find("timestamp");
-	if(it != this->metadataMap.end())
-	{
-		struct tm dt;
-		int timezoneOffsetMin=0;
-		ParseIso8601Datetime(it->second.c_str(), &dt, &timezoneOffsetMin);
-		TmToUtc(&dt, timezoneOffsetMin);
-		metaData.timestamp = (int64_t)timegm(&dt);
-	}
-	it = this->metadataMap.find("changeset");
-	if(it != this->metadataMap.end())
-		metaData.changeset = atol(it->second.c_str());
-	it = this->metadataMap.find("uid");
-	if(it != this->metadataMap.end())
-		metaData.uid = atol(it->second.c_str());
-	it = this->metadataMap.find("user");
-	if(it != this->metadataMap.end())
-		metaData.username = it->second;
-	it = this->metadataMap.find("visible");
-	if(it != this->metadataMap.end())
-		metaData.visible = it->second != "false"; 
-	it = this->metadataMap.find("current");
-	if(it != this->metadataMap.end())
-		metaData.current = it->second != "false";
-}
-
-bool OsmXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
-{
-	if(output == nullptr)
-		throw runtime_error("OsmXmlDecode output pointer is null");
-	if(this->parseCompleted)
-		throw runtime_error("Decode already finished");
-
-	if(len > std::numeric_limits<size_t>::max() - bytesDecoded)
-		return FailLimit("XML_UPLOAD_MAXIMUM_BYTES limit exceeded");
-	bytesDecoded += len;
-	if(!CheckLimit(bytesDecoded, limits.maxBytes,
-		LimitMessage("XML_UPLOAD_MAXIMUM_BYTES", limits.maxBytes, bytesDecoded)))
-		return false;
-
-	if(this->firstParseCall)
-	{
-		output->StoreIsDiff(false);
-		this->firstParseCall = false;
-	}
-
-	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
-	{
-		if(stopProcessing)
-			return false;
-		stringstream ss;
-		ss << XML_ErrorString(XML_GetErrorCode(parser))
-			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
-		errString = ss.str();
-		return false;
-	}
-	if(done)
-	{
-		parseCompletedOk = true;
-	}
-	if(stopProcessing)
-		return false;
-	return !done;
-}
-
-void OsmXmlDecodeString::DecodeFinish()
-{
-	if(parseCompleted)
-		throw runtime_error("Decode already finished");
-	if(output != nullptr)
-		output->Finish();
-	this->output = nullptr;
-	parseCompleted = true;
+	this->output.Finish();
 }
 
 // ***********************************
 
-OsmXmlDecode::OsmXmlDecode(std::streambuf &handleIn):
-	OsmXmlDecodeString(),
-	handle(&handleIn)
-{
-	output = nullptr;
-}
-
-OsmXmlDecode::~OsmXmlDecode()
+OsmXmlDecode::OsmXmlDecode(std::streambuf &input, IDataStreamHandler &outputIn,
+	const OsmXmlLimits &limits):
+	OsmDecoder(outputIn),
+	handle(&input),
+	parser(outputIn, limits),
+	buffer(64 * 1024)
 {
 
 }
 
 bool OsmXmlDecode::DecodeNext()
 {
-	handle.read((char *)decodeBuff, sizeof(decodeBuff));
+	if(this->finished)
+		return false;
 
-	bool done = handle.gcount()==0;
-	return DecodeSubString(decodeBuff, handle.gcount(), done);
-}
-
-void OsmXmlDecode::DecodeHeader()
-{
-
+	this->handle.read(this->buffer.data(), this->buffer.size());
+	size_t count = this->handle.gcount();
+	if(this->handle.bad())
+		throw OsmDecodeError("Error reading XML input");
+	bool done = count == 0;
+	this->parser.Feed(this->buffer.data(), count, done);
+	if(done)
+		this->finished = true; //The parser has already sent Finish
+	return !done;
 }
 
 // ************* Encoder *************
 
-OsmXmlEncodeBase::OsmXmlEncodeBase() : IDataStreamHandler()
+///Length of the valid UTF-8 sequence at text[i] encoding a character XML 1.0
+///allows, or zero if there is not one.
+static size_t XmlCharLength(const std::string &text, size_t i)
 {
+	unsigned char c0 = text[i];
+	size_t len = 0;
+	uint32_t code = 0;
+	if(c0 < 0x80) { len = 1; code = c0; }
+	else if(c0 >= 0xc2 && c0 <= 0xdf) { len = 2; code = c0 & 0x1f; }
+	else if(c0 >= 0xe0 && c0 <= 0xef) { len = 3; code = c0 & 0x0f; }
+	else if(c0 >= 0xf0 && c0 <= 0xf4) { len = 4; code = c0 & 0x07; }
+	else return 0;
+	if(i + len > text.size())
+		return 0;
+	for(size_t j=1; j<len; j++)
+	{
+		unsigned char c = text[i+j];
+		if((c & 0xc0) != 0x80)
+			return 0;
+		code = (code << 6) | (c & 0x3f);
+	}
 
+	//Overlong forms, surrogates and values beyond Unicode are not UTF-8
+	if((len == 3 && code < 0x800) || (len == 4 && code < 0x10000) || code > 0x10ffff)
+		return 0;
+	if(code >= 0xd800 && code <= 0xdfff)
+		return 0;
+	//XML 1.0 excludes most control characters and two noncharacters
+	if(code < 0x20 && code != 0x09 && code != 0x0a && code != 0x0d)
+		return 0;
+	if(code == 0xfffe || code == 0xffff)
+		return 0;
+	return len;
 }
 
-OsmXmlEncodeBase::~OsmXmlEncodeBase()
+void AppendXmlEscaped(const std::string &text, std::string &out)
 {
+	size_t i = 0;
+	while(i < text.size())
+	{
+		char ch = text[i];
+		switch(ch)
+		{
+		case '&': out.append("&amp;"); i++; continue;
+		case '\'': out.append("&apos;"); i++; continue;
+		case '"': out.append("&quot;"); i++; continue;
+		case '<': out.append("&lt;"); i++; continue;
+		case '>': out.append("&gt;"); i++; continue;
+		//Written as references so attribute value normalisation keeps them
+		case '\n': out.append("&#10;"); i++; continue;
+		case '\r': out.append("&#13;"); i++; continue;
+		case '\t': out.append("&#9;"); i++; continue;
+		}
 
+		//Anything XML cannot hold becomes the replacement character, so the
+		//document is always well formed whatever the strings contain
+		size_t len = XmlCharLength(text, i);
+		if(len == 0)
+		{
+			out.append("\xef\xbf\xbd");
+			i++;
+			continue;
+		}
+		out.append(text, i, len);
+		i += len;
+	}
 }
 
-void OsmXmlEncodeBase::WriteStart(const TagMap &customAttribs)
+///True if name can be used as an XML attribute name.
+static bool IsXmlName(const std::string &name)
 {
-	*this << "<?xml version='1.0' encoding='UTF-8'?>\n";
-	*this << "<osm";
+	if(name.empty())
+		return false;
+	for(size_t i=0; i<name.size(); i++)
+	{
+		unsigned char c = name[i];
+		bool start = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == ':';
+		bool rest = start || (c >= '0' && c <= '9') || c == '-' || c == '.';
+		if(i == 0 ? !start : !rest)
+			return false;
+	}
+	return true;
+}
+
+static void AppendAttrib(const char *name, const std::string &value, std::string &out)
+{
+	out.push_back(' ');
+	out.append(name);
+	out.append("=\"");
+	AppendXmlEscaped(value, out);
+	out.push_back('"');
+}
+
+static void AppendCoord(double value, std::string &out)
+{
+	char buf[400]; //Room for the largest finite double
+	snprintf(buf, sizeof(buf), "%.9f", value);
+	out.append(buf);
+}
+
+void AppendXmlRootAttribs(const TagMap &customAttribs, std::string &out)
+{
 	TagMap::const_iterator it = customAttribs.find("version");
-	if(it != customAttribs.end())
-	{
-		*this << " version=\""; 
-		*this << escapexml(it->second);
-		*this << "\"";
-	}
-	else
-		*this << " version=\"0.6\"";
-
+	AppendAttrib("version", it != customAttribs.end() ? it->second : std::string("0.6"), out);
 	it = customAttribs.find("generator");
-	if(it != customAttribs.end())
-	{
-		*this << " generator=\"";
-		*this << escapexml(it->second);
-		*this << "\"";
-	}
-	else
-		*this << " generator=\"cppo5m\"";
+	AppendAttrib("generator", it != customAttribs.end() ? it->second : std::string("cppo5m"), out);
 
 	for(it = customAttribs.begin(); it != customAttribs.end(); it++)
 	{
@@ -483,507 +551,200 @@ void OsmXmlEncodeBase::WriteStart(const TagMap &customAttribs)
 			continue;
 		if(it->second.length() == 0)
 			continue;
-		*this << " ";
-		*this << escapexml(it->first);
-		*this <<"=\"";
-		*this << escapexml(it->second);
-		*this <<"\"";
+		if(!IsXmlName(it->first))
+			throw std::invalid_argument("Not a valid XML attribute name: " + it->first);
+		AppendAttrib(it->first.c_str(), it->second, out);
 	}
-
-	*this << ">\n";
 }
 
-void OsmXmlEncodeBase::EncodeMetaData(const class MetaData &metaData, std::stringstream &ss)
+static void AppendObjectStart(const char *name, const OsmObject &obj, std::string &out)
 {
+	out.append("  <");
+	out.append(name);
+	out.append(" id=\"");
+	out.append(std::to_string(obj.objId));
+	out.push_back('"');
+
+	const MetaData &metaData = obj.metaData;
 	if(metaData.timestamp != 0)
 	{
 		time_t tt = metaData.timestamp;
 		char buf[50];
 		struct tm tmbuf;
-		strftime(buf, sizeof(buf), "%FT%TZ", gmtime_r(&tt, &tmbuf));
-		ss << " timestamp=\""<<buf<<"\"";
+		if(gmtime_r(&tt, &tmbuf) != nullptr && strftime(buf, sizeof(buf), "%FT%TZ", &tmbuf) > 0)
+		{
+			out.append(" timestamp=\"");
+			out.append(buf);
+			out.push_back('"');
+		}
 	}
 	if(metaData.uid != 0)
-		ss << " uid=\"" << metaData.uid << "\"";
+		out.append(" uid=\"" + std::to_string(metaData.uid) + "\"");
 	if(metaData.username.length() > 0)
-		ss << " user=\"" << escapexml(metaData.username) << "\"";
-	if(metaData.visible)
-		ss << " visible=\"true\"";
-	else
-		ss << " visible=\"false\"";
+		AppendAttrib("user", metaData.username, out);
+	out.append(metaData.visible ? " visible=\"true\"" : " visible=\"false\"");
 	if(metaData.version != 0)
-		ss << " version=\"" << metaData.version << "\"";
+		out.append(" version=\"" + std::to_string(metaData.version) + "\"");
 	if(metaData.changeset != 0)
-		ss << " changeset=\"" << metaData.changeset << "\"";
+		out.append(" changeset=\"" + std::to_string(metaData.changeset) + "\"");
 }
 
-bool OsmXmlEncodeBase::Sync()
+static void AppendTags(const TagMap &tags, std::string &out)
 {
-	return false;
-}
-
-bool OsmXmlEncodeBase::Reset()
-{
-	return false;
-}
-
-bool OsmXmlEncodeBase::Finish()
-{
-	*this << "</osm>";
-	return false;
-}
-
-bool OsmXmlEncodeBase::StoreIsDiff(bool)
-{
-	return false;
-}
-
-bool OsmXmlEncodeBase::StoreBounds(double x1, double y1, double x2, double y2)
-{
-	stringstream ss;
-	ss.precision(9);
-	ss << fixed << "  <bounds minlat=\""<<y1<<"\" minlon=\""<<x1<<"\" ";
-	ss << "maxlat=\""<<y2<<"\" maxlon=\""<<x2<<"\" />" << endl;
-	*this << ss.str();
-	return false;
-}
-
-bool OsmXmlEncodeBase::StoreNode(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, double lat, double lon)
-{
-	stringstream ss;
-	ss.precision(9);
-	ss << "  <node id=\""<<objId<<"\"";
-	this->EncodeMetaData(metaData, ss);
-	ss << fixed << " lat=\""<<lat<<"\" lon=\""<<lon<<"\"";
-	if(tags.size() == 0)
-		ss <<" />" << endl;
-	else
+	for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
 	{
-		ss <<">" << endl;
+		out.append("    <tag k=\"");
+		AppendXmlEscaped(it->first, out);
+		out.append("\" v=\"");
+		AppendXmlEscaped(it->second, out);
+		out.append("\" />\n");
+	}
+}
 
-		//Write tags
-		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
+static void AppendObjectEnd(const char *name, bool empty, std::string &out)
+{
+	if(empty)
+	{
+		out.append(" />\n");
+		return;
+	}
+	out.append("  </");
+	out.append(name);
+	out.append(">\n");
+}
+
+void AppendXmlNode(const OsmNode &node, std::string &out)
+{
+	AppendObjectStart("node", node, out);
+	out.append(" lat=\"");
+	AppendCoord(node.lat, out);
+	out.append("\" lon=\"");
+	AppendCoord(node.lon, out);
+	out.push_back('"');
+
+	bool empty = node.tags.empty();
+	if(!empty)
+	{
+		out.append(">\n");
+		AppendTags(node.tags, out);
+	}
+	AppendObjectEnd("node", empty, out);
+}
+
+void AppendXmlWay(const OsmWay &way, std::string &out)
+{
+	AppendObjectStart("way", way, out);
+
+	bool empty = way.tags.empty() && way.refs.empty();
+	if(!empty)
+	{
+		out.append(">\n");
+		for(size_t i=0; i<way.refs.size(); i++)
+			out.append("    <nd ref=\"" + std::to_string(way.refs[i]) + "\" />\n");
+		AppendTags(way.tags, out);
+	}
+	AppendObjectEnd("way", empty, out);
+}
+
+void AppendXmlRelation(const OsmRelation &relation, std::string &out)
+{
+	AppendObjectStart("relation", relation, out);
+
+	bool empty = relation.tags.empty() && relation.members.empty();
+	if(!empty)
+	{
+		out.append(">\n");
+		for(size_t i=0; i<relation.members.size(); i++)
 		{
-			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
+			const RelationMember &member = relation.members[i];
+			out.append("    <member type=\"");
+			out.append(ObjectTypeName(member.type));
+			out.append("\" ref=\"" + std::to_string(member.ref) + "\" role=\"");
+			AppendXmlEscaped(member.role, out);
+			out.append("\" />\n");
 		}
-		ss << "  </node>" << endl;
+		AppendTags(relation.tags, out);
 	}
-	*this << ss.str();
-	return false;
-}
-
-bool OsmXmlEncodeBase::StoreWay(int64_t objId, const class MetaData &metaData, 
-	const TagMap &tags, const std::vector<int64_t> &refs)
-{
-	stringstream ss;
-	ss << "  <way id=\""<<objId<<"\"";
-	this->EncodeMetaData(metaData, ss);
-	if(tags.size() == 0 && refs.size() == 0)
-		ss <<" />" << endl;
-	else
-	{
-		ss <<">" << endl;
-
-		//Write node IDs
-		for(size_t i=0; i<refs.size(); i++)
-			ss << "    <nd ref=\""<<refs[i]<<"\" />" << endl;
-
-		//Write tags
-		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
-			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
-
-		ss << "  </way>" << endl;
-	}
-	*this << ss.str();
-	return false;
-}
-
-bool OsmXmlEncodeBase::StoreRelation(int64_t objId, const class MetaData &metaData, const TagMap &tags, 
-	const std::vector<std::string> &refTypeStrs, const std::vector<int64_t> &refIds,
-	const std::vector<std::string> &refRoles)
-{
-	if(refTypeStrs.size() != refIds.size() || refTypeStrs.size() != refRoles.size())
-		throw std::invalid_argument("Length of ref vectors must be equal");
-
-	stringstream ss;
-	ss << "  <relation id=\""<<objId<<"\"";
-	this->EncodeMetaData(metaData, ss);
-	if(tags.size() == 0 && refTypeStrs.size() == 0)
-		ss <<" />" << endl;
-	else
-	{
-		ss <<">" << endl;
-
-		//Write node IDs
-		for(size_t i=0; i<refTypeStrs.size(); i++)
-			ss << "    <member type=\""<<escapexml(refTypeStrs[i])<<"\" ref=\""<<refIds[i]<<"\" role=\""<<escapexml(refRoles[i])<<"\" />" << endl;
-
-		//Write tags
-		for(TagMap::const_iterator it=tags.begin(); it!=tags.end(); it++)
-			ss << "    <tag k=\""<<escapexml(it->first)<<"\" v=\""<<escapexml(it->second)<<"\" />" << endl;
-
-		ss << "  </relation>" << endl;
-	}
-	*this << ss.str();
-	return false;
-}
-
-void OsmXmlEncodeBase::write (const char* s, std::streamsize n) {}
-
-void OsmXmlEncodeBase::operator<< (const std::string &val) {}
-
-// ****************************
-
-OsmXmlEncode::OsmXmlEncode(std::streambuf &handleIn, const TagMap &customAttribs): OsmXmlEncodeBase(), handle(&handleIn)
-{
-	this->WriteStart(customAttribs);
-}
-
-OsmXmlEncode::~OsmXmlEncode()
-{
-
+	AppendObjectEnd("relation", empty, out);
 }
 
 // ****************************
 
-#ifdef PYTHON_AWARE
-PyOsmXmlEncode::PyOsmXmlEncode(PyObject* obj, const TagMap &customAttribs): OsmXmlEncodeBase()
-{
-	m_Write = NULL;
-	m_PyObj = NULL;
-
-	this->SetOutput(obj);
-	this->WriteStart(customAttribs);
-}
-
-PyOsmXmlEncode::~PyOsmXmlEncode()
-{
-	Py_XDECREF(m_Write);
-	Py_XDECREF(m_PyObj);
-}
-
-void PyOsmXmlEncode::write (const char* s, streamsize n)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", s, n);
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", s, n);
-	#endif 
-	Py_XDECREF(ret);
-}
-
-void PyOsmXmlEncode::operator<< (const string &val)
-{
-	if(this->m_Write == NULL)
-		return;
-	#if PY_MAJOR_VERSION < 3
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"s#", val.c_str(), val.length());
-	#else
-	PyObject* ret = PyObject_CallFunction(m_Write, (char *)"y#", val.c_str(), val.length());
-	#endif 
-	Py_XDECREF(ret);
-}
-
-void PyOsmXmlEncode::SetOutput(PyObject* obj)
-{
-	Py_XDECREF(m_Write);
-	Py_XDECREF(m_PyObj);
-	m_PyObj = obj;
-	m_Write = PyObject_GetAttrString(obj, "write");
-	Py_INCREF(m_PyObj);
-}
-
-#endif //PYTHON_AWARE
-
-// ************* Osm Change Decoder *************
-
-OsmChangeXmlDecodeString::OsmChangeXmlDecodeString():
-	decodeBuff(new class OsmData())
-{
-	output = nullptr;
-	xmlDepth = 0;
-	parseCompleted = false;
-	parseCompletedOk = false;
-	ifunused = false;
-	limits = GetDefaultOsmXmlLimits();
-	bytesDecoded = 0;
-	parser = XML_ParserCreate(NULL);
-	XML_SetUserData(parser, this);
-	XML_SetElementHandler(parser, ::StartChangeElement, ::EndChangeElement);
-	decodeBuff->StoreIsDiff(true);
-	osmDataDecoder.output = decodeBuff.get();
-	osmDataDecoder.SetLimits(limits);
-}
-
-OsmChangeXmlDecodeString::~OsmChangeXmlDecodeString()
-{
-	if(!this->parseCompleted)
-		this->DecodeFinish();
-	XML_ParserFree(parser);
-}
-
-void OsmChangeXmlDecodeString::SetLimits(const class OsmXmlLimits &limitsIn)
-{
-	limits = limitsIn;
-	osmDataDecoder.SetLimits(limitsIn);
-}
-
-bool OsmChangeXmlDecodeString::FailLimit(const std::string &message)
-{
-	errString = message;
-	XML_StopParser(parser, XML_FALSE);
-	return false;
-}
-
-bool OsmChangeXmlDecodeString::CheckLimit(size_t value, size_t limit, const std::string &message)
-{
-	if(limit > 0 && value > limit)
-		return FailLimit(message);
-	return true;
-}
-
-bool OsmChangeXmlDecodeString::CheckElementLimits(const XML_Char *name, const XML_Char **atts)
-{
-	size_t attributeCount = 0;
-	size_t attributeBytes = strlen(name);
-	for(size_t i=0; atts[i] != NULL; i += 2)
-	{
-		attributeCount++;
-		attributeBytes += strlen(atts[i]) + strlen(atts[i+1]);
-	}
-
-	if(!CheckLimit(attributeCount, limits.maxAttributesPerElement,
-		LimitMessage("PGMAP_XML_MAX_ATTRIBUTES_PER_ELEMENT", limits.maxAttributesPerElement, attributeCount)))
-		return false;
-	if(!CheckLimit(attributeBytes, limits.maxAttributeBytes,
-		LimitMessage("PGMAP_XML_MAX_ATTRIBUTE_BYTES", limits.maxAttributeBytes, attributeBytes)))
-		return false;
-	return true;
-}
-
-void OsmChangeXmlDecodeString::StartElement(const XML_Char *name, const XML_Char **atts)
-{
-	this->xmlDepth ++;
-	//cout << this->xmlDepth << " startel " << name << endl;
-
-	if(!CheckLimit(this->xmlDepth, limits.maxDepth,
-		LimitMessage("PGMAP_XML_MAX_DEPTH", limits.maxDepth, this->xmlDepth)))
-		return;
-	if(!CheckElementLimits(name, atts))
-		return;
-
-	if(this->xmlDepth == 2)
-	{
-		std::map<std::string, std::string> attribs;
-		XmlAttsToMap(atts, attribs);
-
-		currentAction = name;
-		std::map<std::string, std::string>::iterator it = attribs.find("if-unused");
-		this->ifunused = (it != attribs.end());
-	}
-	else if(this->xmlDepth > 2)
-	{
-		osmDataDecoder.xmlDepth = this->xmlDepth - 2;
-		osmDataDecoder.StartElement(name, atts);
-	}
-}
-
-void OsmChangeXmlDecodeString::EndElement(const XML_Char *name)
-{
-	//cout << this->xmlDepth << " endel " << name << endl;
-	
-	if(this->xmlDepth == 2)
-	{
-		output->StoreOsmData(currentAction, *decodeBuff, this->ifunused);
-		decodeBuff->Clear();
-		currentAction = "";
-		ifunused = false;
-	}
-	else if(this->xmlDepth > 2)
-	{
-		osmDataDecoder.xmlDepth = this->xmlDepth - 1;
-		osmDataDecoder.EndElement(name);
-	}
-
-	this->xmlDepth --;
-}
-
-bool OsmChangeXmlDecodeString::DecodeSubString(const char *xml, size_t len, bool done)
-{
-	if(this->parseCompleted)
-		throw runtime_error("Decode already finished");
-	if(output == NULL)
-		throw runtime_error("OsmXmlDecode output pointer is null");
-
-	if(len > std::numeric_limits<size_t>::max() - bytesDecoded)
-		return FailLimit("XML_UPLOAD_MAXIMUM_BYTES limit exceeded");
-	bytesDecoded += len;
-	if(!CheckLimit(bytesDecoded, limits.maxBytes,
-		LimitMessage("XML_UPLOAD_MAXIMUM_BYTES", limits.maxBytes, bytesDecoded)))
-		return false;
-
-	if (XML_Parse(parser, xml, len, done) == XML_STATUS_ERROR)
-	{
-		if(errString.size() > 0)
-			return false;
-		stringstream ss;
-		ss << XML_ErrorString(XML_GetErrorCode(parser))
-			<< " at line " << XML_GetCurrentLineNumber(parser) << endl;
-		errString = ss.str();
-		return false;
-	}
-	if(done)
-	{
-		parseCompletedOk = true;
-	}
-	return !done;
-}
-
-void OsmChangeXmlDecodeString::DecodeFinish()
-{
-	if(this->parseCompleted)
-		throw runtime_error("Decode already finished");
-
-	this->osmDataDecoder.DecodeFinish();
-	this->decodeBuff->Finish();
-	this->output = nullptr;
-
-	this->parseCompleted = true;
-}
-
-// ***********************************
-
-OsmChangeXmlDecode::OsmChangeXmlDecode(std::streambuf &handleIn):
-	OsmChangeXmlDecodeString(),
-	handle(&handleIn)
+OsmXmlEncode::OsmXmlEncode(std::shared_ptr<ByteSink> sinkIn, const TagMap &customAttribsIn) :
+	OsmEncoder(sinkIn),
+	customAttribs(customAttribsIn),
+	writtenHeader(false)
 {
 
 }
 
-OsmChangeXmlDecode::~OsmChangeXmlDecode()
+OsmXmlEncode::OsmXmlEncode(std::streambuf &output, const TagMap &customAttribsIn) :
+	OsmXmlEncode(std::make_shared<StreamSink>(output), customAttribsIn)
 {
 
 }
 
-bool OsmChangeXmlDecode::DecodeNext()
+void OsmXmlEncode::WriteStart()
 {
-	handle.read((char *)readBuff, sizeof(readBuff));
-
-	bool done = handle.gcount()==0;
-	return DecodeSubString(readBuff, handle.gcount(), done);
+	std::string out = "<?xml version='1.0' encoding='UTF-8'?>\n<osm";
+	AppendXmlRootAttribs(this->customAttribs, out);
+	out.append(">\n");
+	this->writtenHeader = true;
+	this->Write(out);
 }
 
-void OsmChangeXmlDecode::DecodeHeader()
+void OsmXmlEncode::StoreIsDiff(bool)
 {
-
+	if(!this->writtenHeader)
+		this->WriteStart();
 }
 
-// *************************************
-
-OsmChangeXmlEncode::OsmChangeXmlEncode(std::streambuf &fiIn, const TagMap &customAttribsIn, bool separateActionsIn) : 
-	OsmXmlEncodeBase(), handle(&fiIn)
+void OsmXmlEncode::StoreBounds(const Bounds &bounds)
 {
-	customAttribs = customAttribsIn;
-	separateActions = separateActionsIn;
+	if(!this->writtenHeader)
+		this->WriteStart();
+	std::string out = "  <bounds minlat=\"";
+	AppendCoord(bounds.minLat, out);
+	out.append("\" minlon=\"");
+	AppendCoord(bounds.minLon, out);
+	out.append("\" maxlat=\"");
+	AppendCoord(bounds.maxLat, out);
+	out.append("\" maxlon=\"");
+	AppendCoord(bounds.maxLon, out);
+	out.append("\" />\n");
+	this->Write(out);
 }
 
-OsmChangeXmlEncode::~OsmChangeXmlEncode()
+void OsmXmlEncode::StoreNode(const OsmNode &node)
 {
-
+	if(!this->writtenHeader)
+		this->WriteStart();
+	std::string out;
+	AppendXmlNode(node, out);
+	this->Write(out);
 }
 
-void OsmChangeXmlEncode::EncodeBySingleAction(const std::string &action, const std::vector<const class OsmObject *> &objs)
+void OsmXmlEncode::StoreWay(const OsmWay &way)
 {
-	for(size_t i=0; i<objs.size(); i++)
-	{
-		stringstream actionTagOpen;
-		actionTagOpen << "<" << action << ">" << endl;
-		*this << actionTagOpen.str();
-
-		objs[i]->StreamTo(*this);
-
-		stringstream actionTagClose;
-		actionTagClose << "</" << action << ">" << endl;
-		*this << actionTagClose.str();
-	}
+	if(!this->writtenHeader)
+		this->WriteStart();
+	std::string out;
+	AppendXmlWay(way, out);
+	this->Write(out);
 }
 
-void OsmChangeXmlEncode::Encode(const class OsmChange &osmChange)
+void OsmXmlEncode::StoreRelation(const OsmRelation &relation)
 {
-	*this << "<osmChange version=\"0.6\" generator=\"cppo5m\">\n";
-	for(size_t i=0; i<osmChange.blocks.size(); i++)
-	{
-		const class OsmData &block = osmChange.blocks[i];
-		const std::string &action = osmChange.actions[i];
-
-		if(separateActions)
-		{
-			std::vector<const class OsmObject *> objs;
-
-			if(action != "delete")
-			{
-				for(size_t j=0; j<block.nodes.size(); j++) 
-					objs.push_back(&block.nodes[j]);
-				for(size_t j=0; j<block.ways.size(); j++) 
-					objs.push_back(&block.ways[j]);
-				for(size_t j=0; j<block.relations.size(); j++) 
-					objs.push_back(&block.relations[j]);
-			}
-			else
-			{
-				for(size_t j=0; j<block.relations.size(); j++) 
-					objs.push_back(&block.relations[j]);
-				for(size_t j=0; j<block.ways.size(); j++) 
-					objs.push_back(&block.ways[j]);
-				for(size_t j=0; j<block.nodes.size(); j++) 
-					objs.push_back(&block.nodes[j]);
-			}
-
-			this->EncodeBySingleAction(action, objs);
-		}
-		else
-		{
-			stringstream actionTagOpen;
-			actionTagOpen << "<" << action << ">" << endl;
-			*this << actionTagOpen.str();
-
-			if(action != "delete")
-			{
-				for(size_t j=0; j<block.nodes.size(); j++) 
-					block.nodes[j].StreamTo(*this);
-				for(size_t j=0; j<block.ways.size(); j++) 
-					block.ways[j].StreamTo(*this);
-				for(size_t j=0; j<block.relations.size(); j++) 
-					block.relations[j].StreamTo(*this);
-			}
-			else
-			{
-				for(size_t j=0; j<block.relations.size(); j++) 
-					block.relations[j].StreamTo(*this);
-				for(size_t j=0; j<block.ways.size(); j++) 
-					block.ways[j].StreamTo(*this);
-				for(size_t j=0; j<block.nodes.size(); j++) 
-					block.nodes[j].StreamTo(*this);
-			}
-
-			stringstream actionTagClose;
-			actionTagClose << "</" << action << ">" << endl;
-			*this << actionTagClose.str();
-		}
-	}
-
-	*this << "</osmChange>\n";
+	if(!this->writtenHeader)
+		this->WriteStart();
+	std::string out;
+	AppendXmlRelation(relation, out);
+	this->Write(out);
 }
 
-void OsmChangeXmlEncode::write (const char* s, streamsize n)
+void OsmXmlEncode::Finish()
 {
-	this->handle.write(s, n);
-}
-
-void OsmChangeXmlEncode::operator<< (const string &val)
-{
-	this->handle << val;
+	if(!this->writtenHeader)
+		this->WriteStart();
+	this->Write("</osm>");
 }
