@@ -817,6 +817,126 @@ static void TestXml()
 	}
 }
 
+static string EncodeJson(const OsmData &data, const TagMap &attribs = TagMap())
+{
+	auto sink = make_shared<StringSink>();
+	OsmJsonEncode encoder(sink, attribs);
+	data.StreamTo(encoder);
+	return sink->data;
+}
+
+static void TestJson()
+{
+	//An empty document
+	CHECK(EncodeJson(OsmData()) == "{\"version\":\"0.6\",\"generator\":\"cppo5m\",\"elements\":[]}");
+
+	//One object of each kind, exactly as written
+	OsmData data;
+	data.bounds.push_back(Bounds(-1.5, 50.25, 1.75, 51));
+	data.bounds.push_back(Bounds(1, 2, 3, 4)); //Only the first can be written
+	OsmNode n;
+	n.objId = 5;
+	n.lat = 50.7;
+	n.lon = -1.1000001;
+	n.metaData = Meta(3, 1577934245, 9, 4, "A \"B\"");
+	n.tags["name"] = "Caf\xc3\xa9\nline\\two";
+	n.tags["empty"] = "";
+	data.nodes.push_back(n);
+	OsmWay w;
+	w.objId = 6;
+	w.refs = {5, -7};
+	data.ways.push_back(w);
+	OsmRelation r;
+	r.objId = 8;
+	r.metaData.visible = false;
+	r.metaData.version = 2;
+	r.members.push_back(RelationMember(ObjectType::Way, 6, "outer"));
+	r.members.push_back(RelationMember(ObjectType::Node, 5, ""));
+	data.relations.push_back(r);
+
+	TagMap attribs;
+	attribs["generator"] = "test";
+	attribs["license"] = "odbl";
+	attribs["skipped"] = "";
+	string expected =
+		"{\"version\":\"0.6\",\"generator\":\"test\",\"license\":\"odbl\","
+		"\"bounds\":{\"minlat\":50.25,\"minlon\":-1.5,\"maxlat\":51,\"maxlon\":1.75},\"elements\":[\n"
+		"{\"type\":\"node\",\"id\":5,\"lat\":50.7,\"lon\":-1.1000001,\"timestamp\":\"2020-01-02T03:04:05Z\","
+		"\"version\":3,\"changeset\":9,\"user\":\"A \\\"B\\\"\",\"uid\":4,"
+		"\"tags\":{\"empty\":\"\",\"name\":\"Caf\xc3\xa9\\nline\\\\two\"}},\n"
+		"{\"type\":\"way\",\"id\":6,\"nodes\":[5,-7]},\n"
+		"{\"type\":\"relation\",\"id\":8,\"version\":2,\"visible\":false,"
+		"\"members\":[{\"type\":\"way\",\"ref\":6,\"role\":\"outer\"},{\"type\":\"node\",\"ref\":5,\"role\":\"\"}]}"
+		"\n]}";
+	CHECK(EncodeJson(data, attribs) == expected);
+
+	//A deleted node has no position; whole numbers and zero are written plainly
+	OsmData positions;
+	OsmNode gone;
+	gone.objId = 1;
+	gone.lat = 12;
+	gone.lon = 34;
+	gone.metaData.visible = false;
+	positions.nodes.push_back(gone);
+	OsmNode whole;
+	whole.objId = 2;
+	whole.lat = -0.0;
+	whole.lon = 180;
+	positions.nodes.push_back(whole);
+	string json = EncodeJson(positions);
+	CHECK(json.find("{\"type\":\"node\",\"id\":1,\"visible\":false}") != string::npos);
+	CHECK(json.find("{\"type\":\"node\",\"id\":2,\"lat\":0,\"lon\":180}") != string::npos);
+
+	//Strings: control characters are escaped and invalid UTF-8 replaced
+	string out;
+	AppendJsonString(string("a\x01" "b\xff" "c\x1f\t\r", 8), out);
+	CHECK(out == "\"a\\u0001b\xef\xbf\xbd" "c\\u001f\\t\\r\"");
+	out.clear();
+	AppendJsonString("\xf0\x9f\x97\xba \xed\xa0\x80", out);
+	CHECK(out == "\"\xf0\x9f\x97\xba \xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd\"");
+
+	//Numbers JSON cannot hold are refused
+	OsmData unreal;
+	unreal.nodes.push_back(Node(1, std::nan(""), 0));
+	CHECK(Throws<invalid_argument>([&]{ EncodeJson(unreal); }));
+
+	//Bounds after the first object are left out, and the output can be collected in pieces
+	auto first = make_shared<StringSink>();
+	OsmJsonEncode pieces(first);
+	CHECK(first->data.empty());
+	pieces.StoreNode(data.nodes[0]);
+	pieces.StoreBounds(Bounds(1, 2, 3, 4));
+	auto second = make_shared<StringSink>();
+	pieces.SetSink(second);
+	pieces.StoreWay(data.ways[0]);
+	pieces.Finish();
+	string joined = first->data + second->data;
+	CHECK(joined.find("bounds") == string::npos);
+	CHECK(joined.substr(joined.size() - 3) == "\n]}");
+	CHECK(first->data.size() > 0 && second->data.find("\"type\":\"way\"") != string::npos);
+
+	//Large data: brackets and quotes balance, so the document is well formed
+	OsmData sample = SampleData();
+	string big = EncodeJson(sample);
+	int depth = 0, minDepth = 0;
+	bool inString = false;
+	for(size_t i=0; i<big.size(); i++)
+	{
+		char c = big[i];
+		if(inString)
+		{
+			if(c == '\\') i++;
+			else if(c == '"') inString = false;
+			continue;
+		}
+		if(c == '"') inString = true;
+		else if(c == '{' || c == '[') depth++;
+		else if(c == '}' || c == ']') depth--;
+		if(depth < minDepth) minDepth = depth;
+	}
+	CHECK(depth == 0 && minDepth == 0 && !inString);
+}
+
 static void TestXmlLimits()
 {
 	const string doc = "<osm><node id='1' lat='0' lon='0'><tag k='a' v='1'/><tag k='b' v='2'/></node>"
@@ -1073,6 +1193,7 @@ int main()
 		{"hostile input", TestHostileInput},
 		{"pbf blocks", TestPbfBlocks},
 		{"xml", TestXml},
+		{"json", TestJson},
 		{"xml limits", TestXmlLimits},
 		{"osmchange", TestOsmChange},
 		{"filters", TestFilters},

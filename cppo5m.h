@@ -12,6 +12,7 @@
 #include "o5m.h"
 #include "osmxml.h"
 #include "osmchangexml.h"
+#include "osmjson.h"
 #include "pbf.h"
 #include "filters.h"
 #include "io.h"

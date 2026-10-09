@@ -1,6 +1,6 @@
 # cppo5m
 
-Reading and writing OpenStreetMap data in C++: o5m, OSM XML, osmChange XML and PBF.
+Reading and writing OpenStreetMap data in C++: o5m, OSM XML, osmChange XML and PBF, and writing OSM JSON.
 
 Data moves as a stream. A decoder reads a file and calls a *handler* once for each node, way and relation; an encoder is a handler that writes a file. Connecting one to the other converts between formats without holding the map in memory, and `OsmData` is a handler that keeps everything when that is what you want.
 
@@ -100,6 +100,7 @@ The decoders read untrusted input, so each has a fuzz target; see `fuzz/README.m
 | `decoder.h`, `encoder.h` | Base classes and the error types |
 | `sink.h`, `pysink.h` | Where encoders write |
 | `o5m.h`, `osmxml.h`, `osmchangexml.h`, `pbf.h` | One decoder and one encoder for each format |
+| `osmjson.h` | Encoder for OSM JSON, as returned by the OSM API; there is no decoder |
 | `filters.h` | `FindBbox`, `DeduplicateOsm`, `SortOsm` |
 | `io.h` | Whole-document helpers and format factories |
 | `tools/`, `examples/`, `tests/`, `fuzz/` | `o5mconvert`, example programs, tests and sample data, fuzz targets |
@@ -119,6 +120,7 @@ A conversion tool modelled after osmconvert, mainly useful for testing. The form
 * PBF keeps only the first bounding box, and stores versions and user IDs in 32 bits; the encoder refuses larger values.
 * The PBF encoder writes blocks of up to 8000 objects, as the format recommends, and holds one block in memory at a time. `maxBlockObjects` changes this.
 * XML output is always well formed: bytes that are not valid UTF-8, and characters XML 1.0 does not allow, are written as U+FFFD. o5m and PBF store strings as they are.
+* OSM JSON leaves out metadata that is zero or empty, empty tags, and the position of a deleted node. Only bounds sent before the first object are written.
 * Coordinates must be finite numbers; the XML decoder and the o5m and PBF encoders refuse anything else.
 * The PBF encoder does not write the visible flag unless `encodeHistorical` is set.
 * In o5m an object with version zero has no room for its timestamp, changeset or user.
