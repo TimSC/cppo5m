@@ -591,7 +591,7 @@ void O5mEncode::EncodeTags(const TagMap &tags, std::string &out)
 
 bool O5mEncode::FindStringPairsIndex(const std::string &needle, size_t &indexOut)
 {
-	map<std::string, int64_t>::iterator it = this->stringPairsDict.find(needle);
+	auto it = this->stringPairsDict.find(needle);
 	if(it == this->stringPairsDict.end())
 		return false;
 	indexOut = this->runningRefOffset - it->second;

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <istream>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -88,7 +89,7 @@ private:
 	int64_t lastTimeStamp;
 	int64_t lastChangeSet;
 	FixedDeque<std::string> stringPairs;
-	std::map<std::string, int64_t> stringPairsDict;
+	std::unordered_map<std::string, int64_t> stringPairsDict;
 	int64_t lastLat;
 	int64_t lastLon;
 	int64_t lastRefNode;
